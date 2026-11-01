@@ -33,7 +33,7 @@ logging.basicConfig(
 logger = logging.getLogger("tarbiwi_bot")
 
 async def health_check_handler(request):
-    return web.Response(text="Tarbiwi Bot is running healthy 24/7! 🎓", content_type="text/plain; charset=utf-8")
+    return web.Response(text="Tarbiwi Bot is running healthy 24/7!", content_type="text/plain")
 
 async def start_health_server():
     port = int(os.getenv("PORT", "8080"))
