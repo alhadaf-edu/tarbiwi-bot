@@ -1,0 +1,19 @@
+[Unit]
+Description=Tarbiwi Telegram Educational Bot Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/tarbiwi_bot
+ExecStart=/opt/tarbiwi_bot/.venv/bin/python main.py
+Restart=always
+RestartSec=5
+EnvironmentFile=/opt/tarbiwi_bot/.env
+
+# Security sandbox options
+NoNewPrivileges=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
