@@ -101,31 +101,7 @@ class AuthMiddleware(BaseMiddleware):
                 chat = event.message.chat
 
         if chat and chat.type != "private":
-            # If someone explicitly triggers /start in the group, direct them to private chat
-            target_msg = None
-            if hasattr(event, "message") and event.message:
-                target_msg = event.message
-            elif isinstance(event, Message):
-                target_msg = event
-
-            if target_msg and target_msg.text and ("/start" in target_msg.text):
-                bot: Optional[Bot] = data.get("bot")
-                bot_user = await bot.get_me() if bot else None
-                bot_uname = bot_user.username if bot_user else "Tarbawe_3Bot"
-                kb = InlineKeyboardMarkup(inline_keyboard=[[
-                    InlineKeyboardButton(text="💬 فتح البوت في المحادثة الخاصة", url=f"https://t.me/{bot_uname}?start=group")
-                ]])
-                await target_msg.reply(
-                    "👋 أهلاً بك! محادثات وخدمات «تربوي بوت» مخصصة في <b>المحادثات الخاصة</b> فقط للحفاظ على ترتيب ونظام المجموعة 🎓\n\nاضغط على الزر أدناه لبدء المحادثة في الخاص 👇",
-                    reply_markup=kb,
-                    parse_mode="HTML"
-                )
-            elif hasattr(event, "callback_query") and event.callback_query:
-                await event.callback_query.answer("⚠️ محادثات وخدمات البوت متاحة في الخاص فقط.", show_alert=True)
-            elif isinstance(event, CallbackQuery):
-                await event.answer("⚠️ محادثات وخدمات البوت متاحة في الخاص فقط.", show_alert=True)
-
-            # Silently drop all other group messages so the bot never chats in the group
+            # Bot is completely silent in all non-private chats — no replies, no alerts, nothing
             return
 
         # 2. Check if user is banned
