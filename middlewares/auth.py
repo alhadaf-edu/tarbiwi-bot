@@ -21,6 +21,8 @@ async def auto_delete_messages(messages: list, delay: int = 15):
                     pass
     except Exception:
         pass
+
+async def get_effective_group_id() -> Optional[int]:
     group_id_val = await get_setting("main_group_id", "")
     if not group_id_val.strip() and MAIN_GROUP_ID:
         group_id_val = str(MAIN_GROUP_ID)
@@ -68,11 +70,11 @@ async def check_user_membership(bot: Bot, user_id: int) -> bool:
     """
     Checks if user is member of the diploma group.
     """
-    group_id = await get_effective_group_id()
-    if not group_id:
-        return True
-
     try:
+        group_id = await get_effective_group_id()
+        if not group_id:
+            return True
+
         member = await bot.get_chat_member(chat_id=group_id, user_id=user_id)
         return member.status in ("creator", "administrator", "member", "restricted")
     except TelegramBadRequest as e:
@@ -80,11 +82,11 @@ async def check_user_membership(bot: Bot, user_id: int) -> bool:
         if "user not found" in err_msg or "participant" in err_msg or "user_not_participant" in err_msg:
             return False
         if "chat not found" in err_msg or "bot is not a member" in err_msg:
-            logger.error(f"Bot cannot check membership in group {group_id}: {e}")
+            logger.error(f"Bot cannot check membership in group: {e}")
             return True
         return False
     except Exception as e:
-        logger.warning(f"Error checking membership for user {user_id} in {group_id}: {e}")
+        logger.warning(f"Error checking membership for user {user_id}: {e}")
         return True
 
 class AuthMiddleware(BaseMiddleware):
