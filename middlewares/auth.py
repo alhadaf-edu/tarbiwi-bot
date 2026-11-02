@@ -19,7 +19,8 @@ async def get_effective_group_id() -> Optional[int]:
             return int(clean_val)
         except ValueError:
             pass
-    return None
+    # Default fallback group ID specified by user
+    return -1004407684546
 
 async def get_main_group_invite_link(bot: Bot) -> str:
     # 1. Setting from database
@@ -33,7 +34,7 @@ async def get_main_group_invite_link(bot: Bot) -> str:
         links = await get_group_links(include_hidden=True)
         for l in links:
             url = l.get("url", "")
-            if "t.me/+" in url or "t.me/joinchat" in url or ("t.me/" in url and "whatsapp" not in url):
+            if "t.me/+ru9uMBNoXZ0xM2E8" in url or "t.me/+" in url or "t.me/joinchat" in url:
                 return url
     except Exception:
         pass
@@ -48,8 +49,8 @@ async def get_main_group_invite_link(bot: Bot) -> str:
         except Exception:
             pass
 
-    # 4. Fallback known link
-    return "https://t.me/+NZs9A4YNEbczY2U0"
+    # 4. Fallback known link specified by user
+    return "https://t.me/+ru9uMBNoXZ0xM2E8"
 
 async def check_user_membership(bot: Bot, user_id: int) -> bool:
     """
@@ -101,7 +102,39 @@ class AuthMiddleware(BaseMiddleware):
                 chat = event.message.chat
 
         if chat and chat.type != "private":
-            # Bot is completely silent in all non-private chats — no replies, no alerts, nothing
+            # If a member in the group triggers /start or any slash command from the / menu,
+            # immediately and silently delete their command message so no trace is left in the group!
+            target_msg = None
+            if hasattr(event, "message") and event.message:
+                target_msg = event.message
+            elif isinstance(event, Message):
+                target_msg = event
+
+            if target_msg and target_msg.text and target_msg.text.startswith("/"):
+                try:
+                    await target_msg.delete()
+                except Exception:
+                    pass
+
+                # Silently send a welcome button to the user's private chat if they interacted before
+                try:
+                    bot: Optional[Bot] = data.get("bot")
+                    if bot and user:
+                        bot_info = await bot.get_me()
+                        bot_uname = bot_info.username or "Tarbawe_3Bot"
+                        kb = InlineKeyboardMarkup(inline_keyboard=[[
+                            InlineKeyboardButton(text="🎓 فتح تربوي بوت الآن", url=f"https://t.me/{bot_uname}?start=from_group")
+                        ]])
+                        await bot.send_message(
+                            chat_id=user.id,
+                            text="👋 أهلاً بك زميلنا العزيز!\nاضغط على الزر أدناه لفتح «تربوي بوت» والبدء في استخدامه فوراً 🎓👇",
+                            reply_markup=kb
+                        )
+                except Exception:
+                    # If user has not started bot yet, Telegram does not allow bot initiation
+                    pass
+
+            # Bot remains completely silent in groups — no replies, no group alerts
             return
 
         # 2. Check if user is banned

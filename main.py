@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 from aiogram import Bot, Dispatcher
+from aiogram.types import BotCommand, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -82,6 +83,25 @@ async def main():
     dp.include_router(group_links.router)
     dp.include_router(upload.router)
     dp.include_router(admin.router)
+
+    # Register bot commands for groups (shown in the / menu) and private chats
+    try:
+        await bot.set_my_commands(
+            [
+                BotCommand(command="start", description="🤖 بدء المحادثة مع البوت في الخاص"),
+            ],
+            scope=BotCommandScopeAllGroupChats()
+        )
+        await bot.set_my_commands(
+            [
+                BotCommand(command="start", description="🏠 القائمة الرئيسية"),
+                BotCommand(command="help", description="❓ دليل الاستخدام والمساعدة"),
+            ],
+            scope=BotCommandScopeAllPrivateChats()
+        )
+        logger.info("Bot commands registered successfully for groups and private chats.")
+    except Exception as e:
+        logger.warning(f"Could not register bot commands: {e}")
 
     logger.info("Starting bot polling...")
     try:
