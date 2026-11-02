@@ -1,3 +1,4 @@
+import asyncio
 from typing import Callable, Dict, Any, Awaitable, Optional
 import logging
 from aiogram import BaseMiddleware, Bot
@@ -8,7 +9,18 @@ from config import MAIN_GROUP_ID
 
 logger = logging.getLogger(__name__)
 
-async def get_effective_group_id() -> Optional[int]:
+async def auto_delete_messages(messages: list, delay: int = 15):
+    """Silently delete messages after delay so the group stays completely clean."""
+    try:
+        await asyncio.sleep(delay)
+        for msg in messages:
+            if msg:
+                try:
+                    await msg.delete()
+                except Exception:
+                    pass
+    except Exception:
+        pass
     group_id_val = await get_setting("main_group_id", "")
     if not group_id_val.strip() and MAIN_GROUP_ID:
         group_id_val = str(MAIN_GROUP_ID)
@@ -102,9 +114,6 @@ class AuthMiddleware(BaseMiddleware):
                 chat = event.message.chat
 
         if chat and chat.type != "private":
-            # If a member in the group triggers /start or any slash command from the / menu,
-            # immediately and silently delete their command message so no trace is left in the group,
-            # and send NO messages (neither in group nor in private).
             target_msg = None
             if hasattr(event, "message") and event.message:
                 target_msg = event.message
@@ -112,12 +121,30 @@ class AuthMiddleware(BaseMiddleware):
                 target_msg = event
 
             if target_msg and target_msg.text and target_msg.text.startswith("/"):
+                bot: Optional[Bot] = data.get("bot")
+                bot_user = await bot.get_me() if bot else None
+                bot_uname = bot_user.username if bot_user else "Tarbawe_3Bot"
+                user_mention = user.mention_html() if hasattr(user, "mention_html") else user.full_name
+                
+                kb = InlineKeyboardMarkup(inline_keyboard=[[
+                    InlineKeyboardButton(text="💬 اضغط هنا لبدء المحادثة في الخاص", url=f"https://t.me/{bot_uname}?start=from_group")
+                ]])
+                reply_text = (
+                    f"👋 أهلاً بك {user_mention}!\n\n"
+                    "محادثات وخدمات «تربوي بوت» مخصصة في <b>المحادثات الخاصة</b> فقط للحفاظ على ترتيب ونظام المجموعة 🎓\n\n"
+                    "اضغط على الزر أدناه لبدء المحادثة في الخاص 👇"
+                )
                 try:
-                    await target_msg.delete()
+                    sent_msg = await target_msg.reply(reply_text, reply_markup=kb, parse_mode="HTML")
+                    # Silently delete both user command and bot reply after 15 seconds to keep group 100% clean
+                    asyncio.create_task(auto_delete_messages([target_msg, sent_msg], delay=15))
                 except Exception:
-                    pass
+                    try:
+                        await target_msg.delete()
+                    except Exception:
+                        pass
 
-            # Bot remains completely silent in groups
+            # Drop other non-command group events
             return
 
         # 2. Check if user is banned
