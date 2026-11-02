@@ -61,3 +61,20 @@ async def cb_home(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "noop")
 async def cb_noop(callback: CallbackQuery):
     await callback.answer()
+
+@router.callback_query(F.data == "check_join_membership")
+async def cb_check_join_membership(callback: CallbackQuery):
+    await callback.answer("✅ تم التحقق من عضويتك بنجاح! أهلاً بك في تربوي بوت 🎉", show_alert=True)
+    admin_status = await is_admin(callback.from_user.id)
+    try:
+        await callback.message.edit_text(
+            text=WELCOME_TEXT,
+            reply_markup=get_main_menu_keyboard(is_admin=admin_status),
+            parse_mode="HTML"
+        )
+    except Exception:
+        await callback.message.answer(
+            text=WELCOME_TEXT,
+            reply_markup=get_main_menu_keyboard(is_admin=admin_status),
+            parse_mode="HTML"
+        )

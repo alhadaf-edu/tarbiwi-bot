@@ -3,10 +3,10 @@
 __pycache__/
 *.py[cod]
 *$py.class
-*.db
 *.sqlite
 *.sqlite3
-data/*.db
+data/*.bak
+data/test_tarbiwi.db
 data/backups/
 .idea/
 .vscode/
