@@ -6,7 +6,7 @@ from database import (
     get_group_links, add_group_link, update_group_link, delete_group_link,
     toggle_group_link_visibility, get_pending_suggestions, review_suggestion,
     get_setting, set_setting, get_study_days, get_day_by_id, add_study_day, update_study_day, delete_study_day,
-    get_subjects_by_day, get_subject_by_id,
+    get_subjects_by_day, get_subject_by_id, add_subject,
     update_subject, delete_subject, get_specializations, get_specialization_by_id,
     update_specialization, delete_specialization, add_specialization,
     get_lectures, get_lecture_by_id, update_lecture, delete_lecture,
@@ -474,6 +474,77 @@ async def cb_adm_del_subj_exec(callback: CallbackQuery):
     text = f"📅 <b>مواد يوم {day['name'] if day else ''}:</b>\n\nاضغط على (✏️ تعديل) لتعديل اسم المادة والدكتور، أو (🗑 حذف) لحذف المادة:"
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
 
+# --- Add New Subject Handler ---
+@router.callback_query(F.data.startswith("adm_add_subj:"))
+async def cb_adm_add_subj(callback: CallbackQuery, state: FSMContext):
+    if not await ensure_admin(callback):
+        return
+    day_id = int(callback.data.split(":")[1])
+    await state.update_data(new_subj_day_id=day_id)
+    await state.set_state(AdminStates.waiting_for_new_subject_name)
+    await callback.message.edit_text(
+        "📖 <b>إضافة مادة دراسية جديدة:</b>\n\nأرسل <b>اسم المادة الجديدة</b>:",
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+@router.message(AdminStates.waiting_for_new_subject_name)
+async def adm_new_subj_name_received(message: Message, state: FSMContext):
+    await state.update_data(new_subj_name=message.text.strip())
+    await state.set_state(AdminStates.waiting_for_new_subject_doctor)
+    await message.answer(
+        "👨‍🏫 أرسل <b>اسم عضو هيئة التدريس</b> (أو أرسل <b>-</b> للتخطي):",
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="HTML"
+    )
+
+@router.message(AdminStates.waiting_for_new_subject_doctor)
+async def adm_new_subj_doctor_received(message: Message, state: FSMContext):
+    data = await state.get_data()
+    doctor = message.text.strip()
+    if doctor == "-":
+        doctor = ""
+    day_id = data.get("new_subj_day_id")
+    name = data.get("new_subj_name")
+    await add_subject(day_id, name, doctor)
+    await state.clear()
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع لمواد اليوم", callback_data=f"adm_day_subj:{day_id}")]])
+    await message.answer(
+        f"✅ <b>تم إضافة المادة:</b> {name}\n👨‍🏫 <b>الدكتور:</b> {doctor or 'غير محدد'}\nوتظهر فوراً في المنهج!",
+        reply_markup=kb,
+        parse_mode="HTML"
+    )
+
+# --- Add New Specialization Handler ---
+@router.callback_query(F.data.startswith("adm_add_spec:"))
+async def cb_adm_add_spec(callback: CallbackQuery, state: FSMContext):
+    if not await ensure_admin(callback):
+        return
+    subject_id = int(callback.data.split(":")[1])
+    await state.update_data(new_spec_subject_id=subject_id)
+    await state.set_state(AdminStates.waiting_for_new_spec_name)
+    await callback.message.edit_text(
+        "🎯 <b>إضافة تخصص جديد:</b>\n\nأرسل <b>اسم التخصص الجديد</b>:",
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+@router.message(AdminStates.waiting_for_new_spec_name)
+async def adm_new_spec_name_received(message: Message, state: FSMContext):
+    data = await state.get_data()
+    subject_id = data.get("new_spec_subject_id")
+    name = message.text.strip()
+    await add_specialization(subject_id, name)
+    await state.clear()
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع للتخصصات", callback_data="admin_specs")]])
+    await message.answer(
+        f"✅ <b>تم إضافة التخصص:</b> {name}\nويظهر فوراً في القائمة!",
+        reply_markup=kb,
+        parse_mode="HTML"
+    )
+
 @router.callback_query(F.data.startswith("adm_edit_subj_menu:"))
 async def cb_adm_edit_subj_menu(callback: CallbackQuery, state: FSMContext):
     if not await ensure_admin(callback):
@@ -705,6 +776,28 @@ async def cb_admin_users(callback: CallbackQuery):
     except Exception:
         await callback.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
     await callback.answer()
+
+@router.callback_query(F.data.startswith("adm_user_detail:"))
+async def cb_adm_user_detail(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    user_id = int(callback.data.split(":")[1])
+    users = await get_all_users()
+    u = next((x for x in users if x["user_id"] == user_id), None)
+    if not u:
+        await callback.answer("المستخدم غير موجود في قاعدة البيانات.", show_alert=True)
+        return
+    status = "مشرف 👑" if u.get("is_admin") else ("محظور 🚫" if u.get("is_banned") else "عضو نشط 👤")
+    uname = f"@{u['username']}" if u.get("username") else "بدون يوزر"
+    joined = u.get("joined_at", "غير محدد")
+    alert_text = (
+        f"👤 الاسم: {u.get('full_name', 'مستخدم')}\n"
+        f"🆔 المعرف: {u['user_id']}\n"
+        f"🔗 اليوزر: {uname}\n"
+        f"📌 الرتبة: {status}\n"
+        f"📅 الانضمام: {joined}"
+    )
+    await callback.answer(alert_text, show_alert=True)
 
 @router.callback_query(F.data.startswith("adm_toggle_admin:"))
 async def cb_adm_toggle_admin(callback: CallbackQuery):
