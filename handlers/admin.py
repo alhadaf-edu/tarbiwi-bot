@@ -1456,11 +1456,12 @@ async def cb_adm_curr_books(callback: CallbackQuery):
         text += "\n<i>لا توجد كتب مرفوعة حالياً.</i>"
     else:
         for b in page_books:
-            title = b['title'][:22]
             keyboard.append([
-                InlineKeyboardButton(text=f"📖 {title}", callback_data=f"book_get:{b['id']}"),
-                InlineKeyboardButton(text="✏️", callback_data=f"adm_book_edit_name:{b['id']}"),
-                InlineKeyboardButton(text="🗑", callback_data=f"adm_book_del:{b['id']}")
+                InlineKeyboardButton(text=f"📖 {b['title']}", callback_data=f"book_get:{b['id']}")
+            ])
+            keyboard.append([
+                InlineKeyboardButton(text="✏️ تعديل الاسم", callback_data=f"adm_book_edit_name:{b['id']}"),
+                InlineKeyboardButton(text="🗑 حذف الكتاب", callback_data=f"adm_book_del:{b['id']}")
             ])
 
     nav_row = []
@@ -1547,9 +1548,11 @@ async def cb_adm_curr_day(callback: CallbackQuery):
     for s in subjects:
         doc = f" ({s['doctor_name']})" if s.get('doctor_name') else ""
         keyboard.append([
-            InlineKeyboardButton(text=f"📖 {s['name']}{doc}", callback_data=f"adm_curr_subj:{s['id']}"),
-            InlineKeyboardButton(text="✏️", callback_data=f"adm_edit_subj_menu:{s['id']}"),
-            InlineKeyboardButton(text="🗑", callback_data=f"adm_del_subj_confirm:{s['id']}")
+            InlineKeyboardButton(text=f"📖 {s['name']}{doc}", callback_data=f"adm_curr_subj:{s['id']}")
+        ])
+        keyboard.append([
+            InlineKeyboardButton(text="✏️ تعديل المادة والدكتور", callback_data=f"adm_edit_subj_menu:{s['id']}"),
+            InlineKeyboardButton(text="🗑 حذف المادة", callback_data=f"adm_del_subj_confirm:{s['id']}")
         ])
     keyboard.append([InlineKeyboardButton(text="➕ إضافة مادة جديدة لهذا اليوم", callback_data=f"adm_add_subj:{day_id}")])
     keyboard.append([InlineKeyboardButton(text="🔙 رجوع للأيام الدراسية", callback_data="adm_curr_days")])
@@ -1578,9 +1581,11 @@ async def cb_adm_curr_subj(callback: CallbackQuery):
         keyboard = []
         for sp in specs:
             keyboard.append([
-                InlineKeyboardButton(text=f"🎯 {sp['name']}", callback_data=f"adm_curr_spec:{sp['id']}"),
-                InlineKeyboardButton(text="✏️", callback_data=f"adm_spec_action:{sp['id']}"),
-                InlineKeyboardButton(text="🗑", callback_data=f"adm_del_spec_confirm:{sp['id']}")
+                InlineKeyboardButton(text=f"🎯 {sp['name']}", callback_data=f"adm_curr_spec:{sp['id']}")
+            ])
+            keyboard.append([
+                InlineKeyboardButton(text="✏️ تعديل التخصص", callback_data=f"adm_spec_action:{sp['id']}"),
+                InlineKeyboardButton(text="🗑 حذف التخصص", callback_data=f"adm_del_spec_confirm:{sp['id']}")
             ])
         keyboard.append([InlineKeyboardButton(text="➕ إضافة تخصص جديد", callback_data=f"adm_add_spec:{subj_id}")])
         keyboard.append([InlineKeyboardButton(text="🔙 رجوع لمواد اليوم", callback_data=f"adm_curr_day:{subject['day_id']}")])
@@ -1598,9 +1603,11 @@ async def cb_adm_curr_subj(callback: CallbackQuery):
     keyboard = []
     for lec in lectures:
         keyboard.append([
-            InlineKeyboardButton(text=f"🎓 {lec['name']}", callback_data=f"adm_curr_lec:{lec['id']}"),
-            InlineKeyboardButton(text="✏️", callback_data=f"adm_lec_edit:{lec['id']}"),
-            InlineKeyboardButton(text="🗑", callback_data=f"adm_lec_del:{lec['id']}")
+            InlineKeyboardButton(text=f"🎓 {lec['name']}", callback_data=f"adm_curr_lec:{lec['id']}")
+        ])
+        keyboard.append([
+            InlineKeyboardButton(text="✏️ تعديل المحاضرة", callback_data=f"adm_lec_edit:{lec['id']}"),
+            InlineKeyboardButton(text="🗑 حذف المحاضرة", callback_data=f"adm_lec_del:{lec['id']}")
         ])
     keyboard.append([InlineKeyboardButton(text="➕ إضافة محاضرة لهذه المادة", callback_data=f"quick_add_lec:{subj_id}:0")])
     keyboard.append([InlineKeyboardButton(text="🔙 رجوع لمواد اليوم", callback_data=f"adm_curr_day:{subject['day_id']}")])
@@ -1627,9 +1634,11 @@ async def cb_adm_curr_spec(callback: CallbackQuery):
     keyboard = []
     for lec in lectures:
         keyboard.append([
-            InlineKeyboardButton(text=f"🎓 {lec['name']}", callback_data=f"adm_curr_lec:{lec['id']}"),
-            InlineKeyboardButton(text="✏️", callback_data=f"adm_lec_edit:{lec['id']}"),
-            InlineKeyboardButton(text="🗑", callback_data=f"adm_lec_del:{lec['id']}")
+            InlineKeyboardButton(text=f"🎓 {lec['name']}", callback_data=f"adm_curr_lec:{lec['id']}")
+        ])
+        keyboard.append([
+            InlineKeyboardButton(text="✏️ تعديل المحاضرة", callback_data=f"adm_lec_edit:{lec['id']}"),
+            InlineKeyboardButton(text="🗑 حذف المحاضرة", callback_data=f"adm_lec_del:{lec['id']}")
         ])
     keyboard.append([InlineKeyboardButton(text="➕ إضافة محاضرة لهذا التخصص", callback_data=f"quick_add_lec:{spec['subject_id']}:{spec_id}")])
     keyboard.append([InlineKeyboardButton(text="🔙 رجوع للتخصصات", callback_data=f"adm_curr_subj:{spec['subject_id']}")])
@@ -1720,11 +1729,12 @@ async def cb_adm_curr_videos(callback: CallbackQuery):
         text += "\n<i>لا توجد فيديوهات مرفوعة لهذه المحاضرة حالياً.</i>"
     else:
         for v in page_videos:
-            title = v['title'][:20]
             keyboard.append([
-                InlineKeyboardButton(text=f"🎬 {title}", callback_data=f"video_get:{v['id']}"),
-                InlineKeyboardButton(text="✏️", callback_data=f"adm_vid_edit_title:{v['id']}"),
-                InlineKeyboardButton(text="🗑", callback_data=f"adm_vid_del:{v['id']}")
+                InlineKeyboardButton(text=f"🎬 {v['title']}", callback_data=f"video_get:{v['id']}")
+            ])
+            keyboard.append([
+                InlineKeyboardButton(text="✏️ تعديل العنوان", callback_data=f"adm_vid_edit_title:{v['id']}"),
+                InlineKeyboardButton(text="🗑 حذف الفيديو", callback_data=f"adm_vid_del:{v['id']}")
             ])
 
     nav_row = []
@@ -1777,11 +1787,12 @@ async def cb_adm_curr_audios(callback: CallbackQuery):
         text += "\n<i>لا توجد تسجيلات صوتية مرفوعة لهذه المحاضرة حتى الآن.</i>"
     else:
         for a in page_audios:
-            title = a['title'][:20]
             keyboard.append([
-                InlineKeyboardButton(text=f"🎙 {title}", callback_data=f"audio_get:{a['id']}"),
-                InlineKeyboardButton(text="✏️", callback_data=f"adm_aud_edit_title:{a['id']}"),
-                InlineKeyboardButton(text="🗑", callback_data=f"adm_aud_del:{a['id']}")
+                InlineKeyboardButton(text=f"🎙 {a['title']}", callback_data=f"audio_get:{a['id']}")
+            ])
+            keyboard.append([
+                InlineKeyboardButton(text="✏️ تعديل العنوان", callback_data=f"adm_aud_edit_title:{a['id']}"),
+                InlineKeyboardButton(text="🗑 حذف التسجيل", callback_data=f"adm_aud_del:{a['id']}")
             ])
 
     nav_row = []
@@ -1865,11 +1876,12 @@ async def cb_adm_curr_cat_files(callback: CallbackQuery):
         text += "\n<i>لا توجد ملفات مرفوعة في هذا التصنيف حالياً.</i>"
     else:
         for f in page_files:
-            fname = f['file_name'][:20]
             keyboard.append([
-                InlineKeyboardButton(text=f"📄 {fname}", callback_data=f"file_get:{f['id']}"),
-                InlineKeyboardButton(text="✏️", callback_data=f"adm_file_edit_name:{f['id']}"),
-                InlineKeyboardButton(text="🗑", callback_data=f"adm_file_del_exec:{f['id']}")
+                InlineKeyboardButton(text=f"📄 {f['file_name']}", callback_data=f"file_get:{f['id']}")
+            ])
+            keyboard.append([
+                InlineKeyboardButton(text="✏️ تعديل اسم الملف", callback_data=f"adm_file_edit_name:{f['id']}"),
+                InlineKeyboardButton(text="🗑 حذف الملف", callback_data=f"adm_file_del_exec:{f['id']}")
             ])
 
     nav_row = []

@@ -40,16 +40,14 @@ def get_subjects_keyboard(day_id: int, day_name: str, subjects: List[Dict[str, A
     """Displays subjects for the day with doctor name below/with the subject"""
     keyboard = []
     for s in subjects:
-        doc = f" - {s['doctor_name']}" if s.get("doctor_name") else ""
+        doc = f" ({s['doctor_name']})" if s.get("doctor_name") else ""
         text = f"📖 {s['name']}{doc}"
+        keyboard.append([InlineKeyboardButton(text=text, callback_data=f"subj_view:{s['id']}")])
         if is_admin:
             keyboard.append([
-                InlineKeyboardButton(text=text[:25], callback_data=f"subj_view:{s['id']}"),
-                InlineKeyboardButton(text="✏️", callback_data=f"adm_edit_subj_menu:{s['id']}"),
-                InlineKeyboardButton(text="🗑", callback_data=f"adm_del_subj_confirm:{s['id']}")
+                InlineKeyboardButton(text="✏️ تعديل المادة", callback_data=f"adm_edit_subj_menu:{s['id']}"),
+                InlineKeyboardButton(text="🗑 حذف المادة", callback_data=f"adm_del_subj_confirm:{s['id']}")
             ])
-        else:
-            keyboard.append([InlineKeyboardButton(text=text, callback_data=f"subj_view:{s['id']}")])
 
     if is_admin:
         keyboard.append([InlineKeyboardButton(text="➕ إضافة مادة جديدة لهذا اليوم", callback_data=f"adm_add_subj:{day_id}")])
@@ -66,14 +64,12 @@ def get_specializations_keyboard(subject_id: int, specs: List[Dict[str, Any]], i
     spec_icons = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣"]
     for idx, spec in enumerate(specs):
         icon = spec_icons[idx % len(spec_icons)]
+        keyboard.append([InlineKeyboardButton(text=f"{icon} {spec['name']}", callback_data=f"spec_view:{spec['id']}")])
         if is_admin:
             keyboard.append([
-                InlineKeyboardButton(text=f"{icon} {spec['name'][:20]}", callback_data=f"spec_view:{spec['id']}"),
-                InlineKeyboardButton(text="✏️", callback_data=f"adm_spec_action:{spec['id']}"),
-                InlineKeyboardButton(text="🗑", callback_data=f"adm_del_spec_confirm:{spec['id']}")
+                InlineKeyboardButton(text="✏️ تعديل التخصص", callback_data=f"adm_spec_action:{spec['id']}"),
+                InlineKeyboardButton(text="🗑 حذف التخصص", callback_data=f"adm_del_spec_confirm:{spec['id']}")
             ])
-        else:
-            keyboard.append([InlineKeyboardButton(text=f"{icon} {spec['name']}", callback_data=f"spec_view:{spec['id']}")])
 
     if is_admin:
         keyboard.append([InlineKeyboardButton(text="➕ إضافة تخصص جديد", callback_data=f"adm_add_spec:{subject_id}")])
@@ -94,14 +90,12 @@ def get_lectures_keyboard(
     """Displays lectures list dynamically"""
     keyboard = []
     for lec in lectures:
+        keyboard.append([InlineKeyboardButton(text=f"🎓 {lec['name']}", callback_data=f"lec_view:{lec['id']}")])
         if is_admin:
             keyboard.append([
-                InlineKeyboardButton(text=f"🎓 {lec['name'][:22]}", callback_data=f"lec_view:{lec['id']}"),
-                InlineKeyboardButton(text="✏️", callback_data=f"adm_lec_edit:{lec['id']}"),
-                InlineKeyboardButton(text="🗑", callback_data=f"adm_lec_del:{lec['id']}")
+                InlineKeyboardButton(text="✏️ تعديل المحاضرة", callback_data=f"adm_lec_edit:{lec['id']}"),
+                InlineKeyboardButton(text="🗑 حذف المحاضرة", callback_data=f"adm_lec_del:{lec['id']}")
             ])
-        else:
-            keyboard.append([InlineKeyboardButton(text=f"🎓 {lec['name']}", callback_data=f"lec_view:{lec['id']}")])
 
     # Button to quickly add lecture from here
     add_cb = f"quick_add_lec:{subject_id}:{spec_id if spec_id else 0}"
@@ -162,12 +156,12 @@ def get_category_files_keyboard(
     def builder(f):
         name = f['file_name']
         if is_admin:
-            if len(name) > 22:
-                name = name[:19] + "..."
             return [
-                InlineKeyboardButton(text=f"📄 {name}", callback_data=f"file_get:{f['id']}"),
-                InlineKeyboardButton(text="✏️", callback_data=f"adm_file_edit_name:{f['id']}"),
-                InlineKeyboardButton(text="🗑", callback_data=f"adm_file_del_exec:{f['id']}")
+                [InlineKeyboardButton(text=f"📄 {name}", callback_data=f"file_get:{f['id']}")],
+                [
+                    InlineKeyboardButton(text="✏️ تعديل الاسم", callback_data=f"adm_file_edit_name:{f['id']}"),
+                    InlineKeyboardButton(text="🗑 حذف الملف", callback_data=f"adm_file_del_exec:{f['id']}")
+                ]
             ]
         if len(name) > 35:
             name = name[:32] + "..."
@@ -195,12 +189,12 @@ def get_videos_keyboard(
         title = v['title']
         icon = "🎬" if v.get("video_type") == "telegram_video" else "🔗"
         if is_admin:
-            if len(title) > 22:
-                title = title[:19] + "..."
             return [
-                InlineKeyboardButton(text=f"{icon} {title}", callback_data=f"video_get:{v['id']}"),
-                InlineKeyboardButton(text="✏️", callback_data=f"adm_vid_edit_title:{v['id']}"),
-                InlineKeyboardButton(text="🗑", callback_data=f"adm_vid_del:{v['id']}")
+                [InlineKeyboardButton(text=f"{icon} {title}", callback_data=f"video_get:{v['id']}")],
+                [
+                    InlineKeyboardButton(text="✏️ تعديل العنوان", callback_data=f"adm_vid_edit_title:{v['id']}"),
+                    InlineKeyboardButton(text="🗑 حذف الفيديو", callback_data=f"adm_vid_del:{v['id']}")
+                ]
             ]
         if len(title) > 35:
             title = title[:32] + "..."
@@ -227,12 +221,12 @@ def get_audios_keyboard(
     def builder(a):
         title = a['title']
         if is_admin:
-            if len(title) > 22:
-                title = title[:19] + "..."
             return [
-                InlineKeyboardButton(text=f"🎙 {title}", callback_data=f"audio_get:{a['id']}"),
-                InlineKeyboardButton(text="✏️", callback_data=f"adm_aud_edit_title:{a['id']}"),
-                InlineKeyboardButton(text="🗑", callback_data=f"adm_aud_del:{a['id']}")
+                [InlineKeyboardButton(text=f"🎙 {title}", callback_data=f"audio_get:{a['id']}")],
+                [
+                    InlineKeyboardButton(text="✏️ تعديل العنوان", callback_data=f"adm_aud_edit_title:{a['id']}"),
+                    InlineKeyboardButton(text="🗑 حذف التسجيل", callback_data=f"adm_aud_del:{a['id']}")
+                ]
             ]
         if len(title) > 35:
             title = title[:32] + "..."
@@ -258,12 +252,12 @@ def get_books_keyboard(
     def builder(b):
         title = b['title']
         if is_admin:
-            if len(title) > 22:
-                title = title[:19] + "..."
             return [
-                InlineKeyboardButton(text=f"📚 {title}", callback_data=f"book_get:{b['id']}"),
-                InlineKeyboardButton(text="✏️", callback_data=f"adm_book_edit_name:{b['id']}"),
-                InlineKeyboardButton(text="🗑", callback_data=f"adm_book_del:{b['id']}")
+                [InlineKeyboardButton(text=f"📚 {title}", callback_data=f"book_get:{b['id']}")],
+                [
+                    InlineKeyboardButton(text="✏️ تعديل الاسم", callback_data=f"adm_book_edit_name:{b['id']}"),
+                    InlineKeyboardButton(text="🗑 حذف الكتاب", callback_data=f"adm_book_del:{b['id']}")
+                ]
             ]
         if len(title) > 35:
             title = title[:32] + "..."

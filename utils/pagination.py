@@ -22,11 +22,15 @@ def build_pagination_keyboard(
 
     keyboard: List[List[InlineKeyboardButton]] = []
 
-    # Add item buttons (1 item or row per item)
+    # Add item buttons (1 item, row, or multi-row per item)
     for itm in page_items:
         btn = item_btn_builder(itm)
         if isinstance(btn, list):
-            keyboard.append(btn)
+            if btn and isinstance(btn[0], list):
+                for sub_row in btn:
+                    keyboard.append(sub_row)
+            else:
+                keyboard.append(btn)
         else:
             keyboard.append([btn])
 
