@@ -4,30 +4,31 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 def get_admin_dashboard_keyboard() -> InlineKeyboardMarkup:
     buttons = [
         [
-            InlineKeyboardButton(text="📅 إدارة المواد والدكاترة", callback_data="admin_subjects"),
-            InlineKeyboardButton(text="🎯 إدارة التخصصات", callback_data="admin_specs")
+            InlineKeyboardButton(text="🗓 إدارة الأيام الدراسية", callback_data="admin_days"),
+            InlineKeyboardButton(text="📅 إدارة المواد والدكاترة", callback_data="admin_subjects")
         ],
         [
-            InlineKeyboardButton(text="🎓 إدارة المحاضرات", callback_data="admin_lectures"),
-            InlineKeyboardButton(text="📚 إدارة الكتب والجداول", callback_data="admin_books_schedules")
+            InlineKeyboardButton(text="🎯 إدارة التخصصات", callback_data="admin_specs"),
+            InlineKeyboardButton(text="🎓 إدارة المحاضرات", callback_data="admin_lectures")
         ],
         [
-            InlineKeyboardButton(text="📁 إدارة الملفات والتصنيفات", callback_data="admin_files_hub"),
-            InlineKeyboardButton(text="🎥 إدارة الفيديوهات", callback_data="admin_videos_hub")
+            InlineKeyboardButton(text="📚 إدارة الكتب والجداول", callback_data="admin_books_schedules"),
+            InlineKeyboardButton(text="📁 إدارة الملفات والتصنيفات", callback_data="admin_files_hub")
         ],
         [
-            InlineKeyboardButton(text="💡 اقتراحات المواد الجديدة", callback_data="admin_suggestions"),
+            InlineKeyboardButton(text="🎥 إدارة الفيديوهات", callback_data="admin_videos_hub"),
             InlineKeyboardButton(text="🔗 إدارة روابط المجموعات", callback_data="admin_group_links")
         ],
         [
-            InlineKeyboardButton(text="👥 إدارة المستخدمين والحظر", callback_data="admin_users"),
-            InlineKeyboardButton(text="📢 إعدادات الإشعارات والأرشيف", callback_data="admin_settings")
+            InlineKeyboardButton(text="💡 اقتراحات المواد الجديدة", callback_data="admin_suggestions"),
+            InlineKeyboardButton(text="👥 إدارة المستخدمين والحظر", callback_data="admin_users")
         ],
         [
-            InlineKeyboardButton(text="📊 إحصائيات النظام الشاملة", callback_data="admin_stats"),
-            InlineKeyboardButton(text="📋 سجل النشاط الأخير", callback_data="admin_logs")
+            InlineKeyboardButton(text="📢 إعدادات الإشعارات والأرشيف", callback_data="admin_settings"),
+            InlineKeyboardButton(text="📊 إحصائيات النظام الشاملة", callback_data="admin_stats")
         ],
         [
+            InlineKeyboardButton(text="📋 سجل النشاط الأخير", callback_data="admin_logs"),
             InlineKeyboardButton(text="💾 تنزيل نسخة احتياطية (Backup)", callback_data="admin_download_backup")
         ],
         [

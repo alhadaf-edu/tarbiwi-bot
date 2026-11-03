@@ -353,6 +353,27 @@ async def get_day_by_id(day_id: int) -> Optional[Dict[str, Any]]:
         row = await cursor.fetchone()
         return dict(row) if row else None
 
+async def add_study_day(name: str) -> int:
+    async with get_db() as db:
+        cursor = await db.execute("SELECT MAX(order_num) as m FROM study_days;")
+        row = await cursor.fetchone()
+        order_num = (row["m"] or 0) + 1
+        cursor = await db.execute("INSERT INTO study_days (name, order_num) VALUES (?, ?);", (name, order_num))
+        await db.commit()
+        return cursor.lastrowid
+
+async def update_study_day(day_id: int, name: str) -> bool:
+    async with get_db() as db:
+        cursor = await db.execute("UPDATE study_days SET name = ? WHERE id = ?;", (name, day_id))
+        await db.commit()
+        return cursor.rowcount > 0
+
+async def delete_study_day(day_id: int) -> bool:
+    async with get_db() as db:
+        cursor = await db.execute("DELETE FROM study_days WHERE id = ?;", (day_id,))
+        await db.commit()
+        return cursor.rowcount > 0
+
 async def get_subjects_by_day(day_id: int) -> List[Dict[str, Any]]:
     async with get_db() as db:
         cursor = await db.execute("SELECT * FROM subjects WHERE day_id = ? ORDER BY order_num ASC;", (day_id,))

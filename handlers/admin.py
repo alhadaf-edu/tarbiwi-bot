@@ -5,7 +5,8 @@ from database import (
     is_admin, get_statistics, get_activity_logs, get_all_users, set_user_ban, set_user_admin,
     get_group_links, add_group_link, update_group_link, delete_group_link,
     toggle_group_link_visibility, get_pending_suggestions, review_suggestion,
-    get_setting, set_setting, get_study_days, get_day_by_id, get_subjects_by_day, get_subject_by_id,
+    get_setting, set_setting, get_study_days, get_day_by_id, add_study_day, update_study_day, delete_study_day,
+    get_subjects_by_day, get_subject_by_id,
     update_subject, delete_subject, get_specializations, get_specialization_by_id,
     update_specialization, delete_specialization, add_specialization,
     get_lectures, get_lecture_by_id, update_lecture, delete_lecture,
@@ -288,6 +289,110 @@ async def adm_edit_link_url_received(message: Message, state: FSMContext):
         reply_markup=kb,
         parse_mode="HTML"
     )
+
+# --- Study Days Management ---
+@router.callback_query(F.data == "admin_days")
+async def cb_admin_days(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    days = await get_study_days()
+    keyboard = []
+    for d in days:
+        keyboard.append([
+            InlineKeyboardButton(text=f"🗓 {d['name']}", callback_data=f"adm_day_subj:{d['id']}"),
+            InlineKeyboardButton(text="✏️ تعديل", callback_data=f"adm_day_edit:{d['id']}"),
+            InlineKeyboardButton(text="🗑 حذف", callback_data=f"adm_day_del_confirm:{d['id']}")
+        ])
+    keyboard.append([InlineKeyboardButton(text="➕ إضافة يوم دراسي جديد", callback_data="adm_day_add")])
+    keyboard.append([InlineKeyboardButton(text="🔙 رجوع للوحة التحكم", callback_data="admin_main")])
+    text = (
+        "🗓 <b>إدارة الأيام الدراسية:</b>\n\n"
+        "يمكنك الضغط على اسم اليوم لعرض مواده، أو (✏️ تعديل) لتعديل اسمه، أو (🗑 حذف) لحذف اليوم، أو إضافة يوم جديد:"
+    )
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(F.data == "adm_day_add")
+async def cb_adm_day_add(callback: CallbackQuery, state: FSMContext):
+    if not await ensure_admin(callback):
+        return
+    await state.set_state(AdminStates.waiting_for_new_day_name)
+    await callback.message.edit_text("🗓 أرسل <b>اسم اليوم الدراسي الجديد</b> (مثال: الأحد):", reply_markup=get_cancel_keyboard(), parse_mode="HTML")
+    await callback.answer()
+
+@router.message(AdminStates.waiting_for_new_day_name)
+async def adm_day_new_name_received(message: Message, state: FSMContext):
+    name = message.text.strip()
+    await add_study_day(name)
+    await state.clear()
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع لإدارة الأيام", callback_data="admin_days")]])
+    await message.answer(f"✅ تم إضافة يوم: <b>{name}</b> بنجاح إلى جدول الأيام الدراسية!", reply_markup=kb, parse_mode="HTML")
+
+@router.callback_query(F.data.startswith("adm_day_edit:"))
+async def cb_adm_day_edit(callback: CallbackQuery, state: FSMContext):
+    if not await ensure_admin(callback):
+        return
+    day_id = int(callback.data.split(":")[1])
+    day = await get_day_by_id(day_id)
+    if not day:
+        await callback.answer("اليوم غير موجود.", show_alert=True)
+        return
+    await state.update_data(edit_day_id=day_id)
+    await state.set_state(AdminStates.waiting_for_edit_day_name)
+    await callback.message.edit_text(
+        f"✏️ <b>تعديل اسم اليوم الدراسي:</b>\n\n"
+        f"الاسم الحالي: <b>{day['name']}</b>\n\n"
+        "أرسل <b>الاسم الجديد</b> لليوم:",
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+@router.message(AdminStates.waiting_for_edit_day_name)
+async def adm_day_edit_name_received(message: Message, state: FSMContext):
+    new_name = message.text.strip()
+    data = await state.get_data()
+    day_id = data.get("edit_day_id")
+    if not day_id:
+        await state.clear()
+        await message.answer("⚠️ حدث خطأ أو انتهت صلاحية الجلسة.")
+        return
+    await update_study_day(day_id, new_name)
+    await state.clear()
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع لإدارة الأيام", callback_data="admin_days")]])
+    await message.answer(f"✅ تم تعديل اسم اليوم إلى: <b>{new_name}</b> بنجاح!", reply_markup=kb, parse_mode="HTML")
+
+@router.callback_query(F.data.startswith("adm_day_del_confirm:"))
+async def cb_adm_day_del_confirm(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    day_id = int(callback.data.split(":")[1])
+    day = await get_day_by_id(day_id)
+    if not day:
+        await callback.answer("اليوم غير موجود.", show_alert=True)
+        return
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="⚠️ نعم، احذف اليوم", callback_data=f"adm_day_del_exec:{day_id}"),
+            InlineKeyboardButton(text="❌ تراجع", callback_data="admin_days")
+        ]
+    ])
+    text = (
+        f"⚠️ <b>تأكيد حذف اليوم الدراسي:</b>\n\n"
+        f"هل أنت متأكد من حذف: <b>{day['name']}</b>؟\n\n"
+        "<i>ملاحظة: سيتم حذف المواد والمحاضرات والملفات المرتبطة بهذا اليوم أيضاً.</i>"
+    )
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("adm_day_del_exec:"))
+async def cb_adm_day_del_exec(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    day_id = int(callback.data.split(":")[1])
+    await delete_study_day(day_id)
+    await callback.answer("🗑 تم حذف اليوم الدراسي بنجاح.", show_alert=True)
+    await cb_admin_days(callback)
 
 # --- Subjects & Doctors Management ---
 @router.callback_query(F.data == "admin_subjects")
