@@ -1,6 +1,6 @@
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from database import get_books, get_book_by_id, get_schedules, get_schedule_by_id
+from database import get_books, get_book_by_id, get_schedules, get_schedule_by_id, is_admin
 from keyboards.study_kb import get_books_keyboard
 
 router = Router(name="books")
@@ -9,6 +9,7 @@ router = Router(name="books")
 async def cb_books_list(callback: CallbackQuery):
     page = int(callback.data.split(":")[1])
     books = await get_books()
+    admin_status = await is_admin(callback.from_user.id)
 
     text = (
         "📖 <b>قسم تحميل الكتب والمراجع الدراسية:</b>\n\n"
@@ -17,7 +18,7 @@ async def cb_books_list(callback: CallbackQuery):
         "اضغط على أي كتاب لتحميله مباشرة 👇"
     )
 
-    kb = get_books_keyboard(books, page=page)
+    kb = get_books_keyboard(books, page=page, is_admin=admin_status)
     try:
         await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
     except Exception:

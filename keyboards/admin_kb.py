@@ -4,20 +4,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 def get_admin_dashboard_keyboard() -> InlineKeyboardMarkup:
     buttons = [
         [
-            InlineKeyboardButton(text="🗓 إدارة الأيام الدراسية", callback_data="admin_days"),
-            InlineKeyboardButton(text="📅 إدارة المواد والدكاترة", callback_data="admin_subjects")
-        ],
-        [
-            InlineKeyboardButton(text="🎯 إدارة التخصصات", callback_data="admin_specs"),
-            InlineKeyboardButton(text="🎓 إدارة المحاضرات", callback_data="admin_lectures")
-        ],
-        [
-            InlineKeyboardButton(text="📚 إدارة الكتب والجداول", callback_data="admin_books_schedules"),
-            InlineKeyboardButton(text="📁 إدارة الملفات والتصنيفات", callback_data="admin_files_hub")
-        ],
-        [
-            InlineKeyboardButton(text="🎥 إدارة الفيديوهات", callback_data="admin_videos_hub"),
-            InlineKeyboardButton(text="🎙 إدارة التسجيلات الصوتية", callback_data="admin_audios_hub")
+            InlineKeyboardButton(text="📚 لوحة تحكم وتعديل المنهج الدراسي", callback_data="admin_curriculum_hub")
         ],
         [
             InlineKeyboardButton(text="🔗 إدارة روابط المجموعات", callback_data="admin_group_links")
@@ -37,6 +24,14 @@ def get_admin_dashboard_keyboard() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(text="🏠 العودة للقائمة الرئيسية", callback_data="home")
         ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_admin_curriculum_hub_keyboard() -> InlineKeyboardMarkup:
+    buttons = [
+        [InlineKeyboardButton(text="📖 تعديل تحميل الكتب الدراسية", callback_data="adm_curr_books:0")],
+        [InlineKeyboardButton(text="🗓 تعديل المواد والأيام الدراسية", callback_data="adm_curr_days")],
+        [InlineKeyboardButton(text="🔙 رجوع للوحة التحكم", callback_data="admin_main")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 

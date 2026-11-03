@@ -12,11 +12,11 @@ from database import (
     get_lectures, get_lecture_by_id, update_lecture, delete_lecture,
     get_files, get_file_by_id, update_file, delete_file, toggle_file_hidden,
     get_videos, get_video_by_id, update_video, delete_video, toggle_video_hidden,
-    get_books, delete_book, get_schedules, delete_schedule, CATEGORY_NAMES,
+    get_books, get_book_by_id, update_book, delete_book, get_schedules, delete_schedule, CATEGORY_NAMES,
     get_audios, get_audio_by_id, update_audio, delete_audio, toggle_audio_hidden
 )
 from keyboards.admin_kb import (
-    get_admin_dashboard_keyboard, get_admin_links_keyboard, get_admin_link_actions_keyboard,
+    get_admin_dashboard_keyboard, get_admin_curriculum_hub_keyboard, get_admin_links_keyboard, get_admin_link_actions_keyboard,
     get_admin_file_actions_keyboard, get_admin_settings_keyboard
 )
 from keyboards.main_kb import get_cancel_keyboard
@@ -1409,3 +1409,481 @@ async def cb_adm_aud_del(callback: CallbackQuery):
     await delete_audio(aud_id)
     await callback.answer("🗑 تم حذف التسجيل الصوتي بنجاح.", show_alert=True)
     await cb_admin_audios_hub(callback)
+
+# ==========================================
+# لوحة تحكم وتعديل المنهج الدراسي الموحدة
+# Unified Curriculum Management Hub
+# ==========================================
+@router.callback_query(F.data == "admin_curriculum_hub")
+async def cb_admin_curriculum_hub(callback: CallbackQuery, state: FSMContext):
+    if not await ensure_admin(callback):
+        return
+    await state.clear()
+    text = (
+        "📚 <b>لوحة تحكم وتعديل المنهج الدراسي:</b>\n\n"
+        "من هنا يمكنك إدارة وتعديل وحذف كل ما يخص المنهج الدراسي بالكامل:\n\n"
+        "1️⃣ <b>تعديل تحميل الكتب الدراسية:</b> استعراض الكتب وتعديل أسمائها أو حذفها.\n"
+        "2️⃣ <b>تعديل المواد والأيام الدراسية:</b> التنقل بين الأيام والمواد والمحاضرات لتعديل أو حذف أي محاضرة أو ملف أو فيديو أو تسجيل صوتي بجانبه مباشرة.\n\n"
+        "اختر القسم المطلوب 👇"
+    )
+    await callback.message.edit_text(text, reply_markup=get_admin_curriculum_hub_keyboard(), parse_mode="HTML")
+    await callback.answer()
+
+# --- 1. تعديل وتحميل الكتب الدراسية ---
+@router.callback_query(F.data.startswith("adm_curr_books"))
+async def cb_adm_curr_books(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    parts = callback.data.split(":")
+    page = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+
+    books = await get_books()
+    page_size = 6
+    total_books = len(books)
+    total_pages = max(1, (total_books + page_size - 1) // page_size)
+    page = max(0, min(page, total_pages - 1))
+    start_idx = page * page_size
+    page_books = books[start_idx:start_idx + page_size]
+
+    text = (
+        "📖 <b>إدارة وتعديل الكتب الدراسية والمراجع:</b>\n\n"
+        f"إجمالي الكتب: <b>{total_books}</b> (صفحة {page + 1} من {total_pages})\n\n"
+        "اضغط على اسم الكتاب لتحميله، أو (✏️) لتعديل اسمه، أو (🗑) لحذفه نهائياً:"
+    )
+
+    keyboard = []
+    if not books:
+        text += "\n<i>لا توجد كتب مرفوعة حالياً.</i>"
+    else:
+        for b in page_books:
+            title = b['title'][:22]
+            keyboard.append([
+                InlineKeyboardButton(text=f"📖 {title}", callback_data=f"book_get:{b['id']}"),
+                InlineKeyboardButton(text="✏️", callback_data=f"adm_book_edit_name:{b['id']}"),
+                InlineKeyboardButton(text="🗑", callback_data=f"adm_book_del:{b['id']}")
+            ])
+
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton(text="⬅️ السابق", callback_data=f"adm_curr_books:{page - 1}"))
+    if total_pages > 1:
+        nav_row.append(InlineKeyboardButton(text=f"📄 {page + 1}/{total_pages}", callback_data="noop"))
+    if page < total_pages - 1:
+        nav_row.append(InlineKeyboardButton(text="التالي ➡️", callback_data=f"adm_curr_books:{page + 1}"))
+    if nav_row:
+        keyboard.append(nav_row)
+
+    keyboard.append([InlineKeyboardButton(text="➕ إضافة كتاب دراسي جديد", callback_data="start_upload_book")])
+    keyboard.append([InlineKeyboardButton(text="🔙 رجوع للمنهج الدراسي", callback_data="admin_curriculum_hub")])
+
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("adm_book_edit_name:"))
+async def cb_adm_book_edit_name(callback: CallbackQuery, state: FSMContext):
+    if not await ensure_admin(callback):
+        return
+    book_id = int(callback.data.split(":")[1])
+    b = await get_book_by_id(book_id)
+    if not b:
+        await callback.answer("الكتاب غير موجود.", show_alert=True)
+        return
+    await state.update_data(edit_book_id=book_id)
+    await state.set_state(AdminStates.waiting_for_edit_book_title)
+    text = (
+        f"✏️ <b>تعديل اسم الكتاب:</b>\n\n"
+        f"الاسم الحالي: <b>{b['title']}</b>\n\n"
+        "أرسل <b>الاسم الجديد</b> للكتاب:"
+    )
+    await callback.message.edit_text(text, reply_markup=get_cancel_keyboard(), parse_mode="HTML")
+    await callback.answer()
+
+@router.message(AdminStates.waiting_for_edit_book_title)
+async def adm_book_new_title_received(message: Message, state: FSMContext):
+    new_title = message.text.strip()
+    data = await state.get_data()
+    book_id = data.get("edit_book_id")
+    if not book_id:
+        await state.clear()
+        await message.answer("⚠️ حدث خطأ أو انتهت صلاحية الجلسة.")
+        return
+    await update_book(book_id, title=new_title)
+    await state.clear()
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 العودة لقائمة الكتب", callback_data="adm_curr_books:0")]])
+    await message.answer(f"✅ تم تعديل اسم الكتاب إلى: <b>{new_title}</b> بنجاح!", reply_markup=kb, parse_mode="HTML")
+
+# --- 2. تعديل المواد والأيام الدراسية (Hierarchical Tree) ---
+@router.callback_query(F.data == "adm_curr_days")
+async def cb_adm_curr_days(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    days = await get_study_days()
+    keyboard = []
+    for d in days:
+        keyboard.append([
+            InlineKeyboardButton(text=f"🗓 {d['name']}", callback_data=f"adm_curr_day:{d['id']}"),
+            InlineKeyboardButton(text="✏️", callback_data=f"adm_day_edit:{d['id']}"),
+            InlineKeyboardButton(text="🗑", callback_data=f"adm_day_del_confirm:{d['id']}")
+        ])
+    keyboard.append([InlineKeyboardButton(text="➕ إضافة يوم دراسي جديد", callback_data="adm_day_add")])
+    keyboard.append([InlineKeyboardButton(text="🔙 رجوع للمنهج الدراسي", callback_data="admin_curriculum_hub")])
+
+    text = (
+        "🗓 <b>تعديل المواد والأيام الدراسية:</b>\n\n"
+        "اضغط على اسم اليوم للدخول واستعراض وتعديل مواده ومحاضراته،\n"
+        "أو اضغط (✏️) لتعديل اسم اليوم، أو (🗑) لحذفه:"
+    )
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("adm_curr_day:"))
+async def cb_adm_curr_day(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    day_id = int(callback.data.split(":")[1])
+    day = await get_day_by_id(day_id)
+    subjects = await get_subjects_by_day(day_id)
+    keyboard = []
+    for s in subjects:
+        doc = f" ({s['doctor_name']})" if s.get('doctor_name') else ""
+        keyboard.append([
+            InlineKeyboardButton(text=f"📖 {s['name']}{doc}", callback_data=f"adm_curr_subj:{s['id']}"),
+            InlineKeyboardButton(text="✏️", callback_data=f"adm_edit_subj_menu:{s['id']}"),
+            InlineKeyboardButton(text="🗑", callback_data=f"adm_del_subj_confirm:{s['id']}")
+        ])
+    keyboard.append([InlineKeyboardButton(text="➕ إضافة مادة جديدة لهذا اليوم", callback_data=f"adm_add_subj:{day_id}")])
+    keyboard.append([InlineKeyboardButton(text="🔙 رجوع للأيام الدراسية", callback_data="adm_curr_days")])
+
+    text = (
+        f"📅 <b>مواد يوم {day['name'] if day else ''}:</b>\n\n"
+        f"إجمالي المواد: {len(subjects)}\n"
+        "اضغط على اسم المادة للدخول لمحاضراتها وتعديلها، أو (✏️) لتعديل اسمها والدكتور، أو (🗑) لحذفها:"
+    )
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("adm_curr_subj:"))
+async def cb_adm_curr_subj(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    subj_id = int(callback.data.split(":")[1])
+    subject = await get_subject_by_id(subj_id)
+    if not subject:
+        await callback.answer("المادة غير موجودة.", show_alert=True)
+        return
+
+    # If has specializations
+    if subject.get("has_specializations"):
+        specs = await get_specializations(subj_id)
+        keyboard = []
+        for sp in specs:
+            keyboard.append([
+                InlineKeyboardButton(text=f"🎯 {sp['name']}", callback_data=f"adm_curr_spec:{sp['id']}"),
+                InlineKeyboardButton(text="✏️", callback_data=f"adm_spec_action:{sp['id']}"),
+                InlineKeyboardButton(text="🗑", callback_data=f"adm_del_spec_confirm:{sp['id']}")
+            ])
+        keyboard.append([InlineKeyboardButton(text="➕ إضافة تخصص جديد", callback_data=f"adm_add_spec:{subj_id}")])
+        keyboard.append([InlineKeyboardButton(text="🔙 رجوع لمواد اليوم", callback_data=f"adm_curr_day:{subject['day_id']}")])
+
+        text = (
+            f"📖 <b>{subject['name']}</b> (مقسمة لتخصصات)\n\n"
+            "اضغط على التخصص لإدارة محاضراته وملفاته، أو (✏️) للتعديل، أو (🗑) للحذف:"
+        )
+        await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
+        await callback.answer()
+        return
+
+    # No specializations -> Show Lectures
+    lectures = await get_lectures(subj_id)
+    keyboard = []
+    for lec in lectures:
+        keyboard.append([
+            InlineKeyboardButton(text=f"🎓 {lec['name']}", callback_data=f"adm_curr_lec:{lec['id']}"),
+            InlineKeyboardButton(text="✏️", callback_data=f"adm_lec_edit:{lec['id']}"),
+            InlineKeyboardButton(text="🗑", callback_data=f"adm_lec_del:{lec['id']}")
+        ])
+    keyboard.append([InlineKeyboardButton(text="➕ إضافة محاضرة لهذه المادة", callback_data=f"quick_add_lec:{subj_id}:0")])
+    keyboard.append([InlineKeyboardButton(text="🔙 رجوع لمواد اليوم", callback_data=f"adm_curr_day:{subject['day_id']}")])
+
+    text = (
+        f"📖 <b>محاضرات مادة {subject['name']}:</b>\n\n"
+        f"إجمالي المحاضرات: {len(lectures)}\n"
+        "اضغط على اسم المحاضرة للدخول إلى ملفاتها وفيديوهاتها وتسجيلاتها وتعديلها أو حذف أي منها 👇"
+    )
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("adm_curr_spec:"))
+async def cb_adm_curr_spec(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    spec_id = int(callback.data.split(":")[1])
+    spec = await get_specialization_by_id(spec_id)
+    if not spec:
+        await callback.answer("التخصص غير موجود.", show_alert=True)
+        return
+
+    lectures = await get_lectures(spec["subject_id"], specialization_id=spec_id)
+    keyboard = []
+    for lec in lectures:
+        keyboard.append([
+            InlineKeyboardButton(text=f"🎓 {lec['name']}", callback_data=f"adm_curr_lec:{lec['id']}"),
+            InlineKeyboardButton(text="✏️", callback_data=f"adm_lec_edit:{lec['id']}"),
+            InlineKeyboardButton(text="🗑", callback_data=f"adm_lec_del:{lec['id']}")
+        ])
+    keyboard.append([InlineKeyboardButton(text="➕ إضافة محاضرة لهذا التخصص", callback_data=f"quick_add_lec:{spec['subject_id']}:{spec_id}")])
+    keyboard.append([InlineKeyboardButton(text="🔙 رجوع للتخصصات", callback_data=f"adm_curr_subj:{spec['subject_id']}")])
+
+    text = (
+        f"🎯 <b>محاضرات تخصص {spec['name']}:</b>\n\n"
+        f"إجمالي المحاضرات: {len(lectures)}\n"
+        "اضغط على اسم المحاضرة للدخول إلى ملفاتها وفيديوهاتها وتسجيلاتها وتعديلها أو حذف أي منها 👇"
+    )
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("adm_curr_lec:"))
+async def cb_adm_curr_lec(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    lec_id = int(callback.data.split(":")[1])
+    lecture = await get_lecture_by_id(lec_id)
+    if not lecture:
+        await callback.answer("المحاضرة غير موجودة.", show_alert=True)
+        return
+
+    spec_id = lecture.get("specialization_id")
+    videos = await get_videos(lec_id, specialization_id=spec_id)
+    audios = await get_audios(lec_id, specialization_id=spec_id)
+    files_ai = await get_files(lec_id, "ai", specialization_id=spec_id)
+    files_hw = await get_files(lec_id, "handwritten", specialization_id=spec_id)
+    files_ppt = await get_files(lec_id, "powerpoint", specialization_id=spec_id)
+    total_files = len(files_ai) + len(files_hw) + len(files_ppt)
+
+    spec_part = f" ⬅️ {lecture['spec_name']}" if lecture.get("spec_name") else ""
+    breadcrumb = f"{lecture['day_name']} ⬅️ {lecture['subject_name']}{spec_part} ⬅️ <b>{lecture['name']}</b>"
+
+    text = (
+        f"📍 <b>المسار:</b> {breadcrumb}\n\n"
+        f"🎓 <b>لوحة تحكم محتويات ({lecture['name']}):</b>\n\n"
+        f"🎥 الفيديوهات المرفوعة: <b>{len(videos)}</b>\n"
+        f"🎙 التسجيلات الصوتية: <b>{len(audios)}</b>\n"
+        f"📁 الملفات التعليمية: <b>{total_files}</b>\n\n"
+        "اضغط على أي قسم لإدارته وتعديل أو حذف أي ملف بداخله بجانب اسمه مباشرة 👇"
+    )
+
+    if spec_id:
+        back_cb = f"adm_curr_spec:{spec_id}"
+    else:
+        back_cb = f"adm_curr_subj:{lecture['subject_id']}"
+
+    keyboard = [
+        [InlineKeyboardButton(text=f"🎥 فيديوهات المحاضرة ({len(videos)})", callback_data=f"adm_curr_videos:{lec_id}:0")],
+        [InlineKeyboardButton(text=f"🎙 التسجيلات الصوتية ({len(audios)})", callback_data=f"adm_curr_audios:{lec_id}:0")],
+        [InlineKeyboardButton(text=f"📂 ملفات وتصنيفات المحاضرة ({total_files})", callback_data=f"adm_curr_files_cats:{lec_id}")],
+        [InlineKeyboardButton(text="🔙 رجوع للمحاضرات", callback_data=back_cb)]
+    ]
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("adm_curr_videos:"))
+async def cb_adm_curr_videos(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    parts = callback.data.split(":")
+    lec_id = int(parts[1])
+    page = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+
+    lecture = await get_lecture_by_id(lec_id)
+    if not lecture:
+        await callback.answer("المحاضرة غير موجودة.", show_alert=True)
+        return
+
+    spec_id = lecture.get("specialization_id")
+    videos = await get_videos(lec_id, specialization_id=spec_id)
+
+    page_size = 6
+    total = len(videos)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page = max(0, min(page, total_pages - 1))
+    start_idx = page * page_size
+    page_videos = videos[start_idx:start_idx + page_size]
+
+    text = (
+        f"🎥 <b>إدارة فيديوهات ({lecture['name']}):</b>\n\n"
+        f"إجمالي الفيديوهات: <b>{total}</b> (صفحة {page + 1} من {total_pages})\n\n"
+        "يمكنك الضغط على اسم الفيديو لمشاهدته، أو (✏️) لتعديل عنوانه، أو (🗑) لحذفه نهائياً:"
+    )
+
+    keyboard = []
+    if not videos:
+        text += "\n<i>لا توجد فيديوهات مرفوعة لهذه المحاضرة حالياً.</i>"
+    else:
+        for v in page_videos:
+            title = v['title'][:20]
+            keyboard.append([
+                InlineKeyboardButton(text=f"🎬 {title}", callback_data=f"video_get:{v['id']}"),
+                InlineKeyboardButton(text="✏️", callback_data=f"adm_vid_edit_title:{v['id']}"),
+                InlineKeyboardButton(text="🗑", callback_data=f"adm_vid_del:{v['id']}")
+            ])
+
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton(text="⬅️ السابق", callback_data=f"adm_curr_videos:{lec_id}:{page - 1}"))
+    if total_pages > 1:
+        nav_row.append(InlineKeyboardButton(text=f"📄 {page + 1}/{total_pages}", callback_data="noop"))
+    if page < total_pages - 1:
+        nav_row.append(InlineKeyboardButton(text="التالي ➡️", callback_data=f"adm_curr_videos:{lec_id}:{page + 1}"))
+    if nav_row:
+        keyboard.append(nav_row)
+
+    keyboard.append([InlineKeyboardButton(text="➕ إضافة فيديو لهذه المحاضرة", callback_data=f"quick_upload_video:{lec_id}")])
+    keyboard.append([InlineKeyboardButton(text="🔙 رجوع للمحاضرة", callback_data=f"adm_curr_lec:{lec_id}")])
+
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("adm_curr_audios:"))
+async def cb_adm_curr_audios(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    parts = callback.data.split(":")
+    lec_id = int(parts[1])
+    page = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+
+    lecture = await get_lecture_by_id(lec_id)
+    if not lecture:
+        await callback.answer("المحاضرة غير موجودة.", show_alert=True)
+        return
+
+    spec_id = lecture.get("specialization_id")
+    audios = await get_audios(lec_id, specialization_id=spec_id)
+
+    page_size = 6
+    total = len(audios)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page = max(0, min(page, total_pages - 1))
+    start_idx = page * page_size
+    page_audios = audios[start_idx:start_idx + page_size]
+
+    text = (
+        f"🎙 <b>إدارة تسجيلات ({lecture['name']}):</b>\n\n"
+        f"إجمالي التسجيلات الصوتية: <b>{total}</b> (صفحة {page + 1} من {total_pages})\n\n"
+        "يمكنك الضغط على التسجيل للاستماع، أو (✏️) لتعديل عنوانه، أو (🗑) لحذفه:"
+    )
+
+    keyboard = []
+    if not audios:
+        text += "\n<i>لا توجد تسجيلات صوتية مرفوعة لهذه المحاضرة حتى الآن.</i>"
+    else:
+        for a in page_audios:
+            title = a['title'][:20]
+            keyboard.append([
+                InlineKeyboardButton(text=f"🎙 {title}", callback_data=f"audio_get:{a['id']}"),
+                InlineKeyboardButton(text="✏️", callback_data=f"adm_aud_edit_title:{a['id']}"),
+                InlineKeyboardButton(text="🗑", callback_data=f"adm_aud_del:{a['id']}")
+            ])
+
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton(text="⬅️ السابق", callback_data=f"adm_curr_audios:{lec_id}:{page - 1}"))
+    if total_pages > 1:
+        nav_row.append(InlineKeyboardButton(text=f"📄 {page + 1}/{total_pages}", callback_data="noop"))
+    if page < total_pages - 1:
+        nav_row.append(InlineKeyboardButton(text="التالي ➡️", callback_data=f"adm_curr_audios:{lec_id}:{page + 1}"))
+    if nav_row:
+        keyboard.append(nav_row)
+
+    keyboard.append([InlineKeyboardButton(text="➕ رفع تسجيل صوتي جديد", callback_data=f"quick_upload_audio:{lec_id}")])
+    keyboard.append([InlineKeyboardButton(text="🔙 رجوع للمحاضرة", callback_data=f"adm_curr_lec:{lec_id}")])
+
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("adm_curr_files_cats:"))
+async def cb_adm_curr_files_cats(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    lec_id = int(callback.data.split(":")[1])
+    lecture = await get_lecture_by_id(lec_id)
+    if not lecture:
+        await callback.answer("المحاضرة غير موجودة.", show_alert=True)
+        return
+
+    spec_id = lecture.get("specialization_id")
+    files_ai = await get_files(lec_id, "ai", specialization_id=spec_id)
+    files_hw = await get_files(lec_id, "handwritten", specialization_id=spec_id)
+    files_ppt = await get_files(lec_id, "powerpoint", specialization_id=spec_id)
+
+    text = (
+        f"📂 <b>إدارة ملفات وتصنيفات ({lecture['name']}):</b>\n\n"
+        "اختر التصنيف لاستعراض ملفاته وتعديلها أو حذف أي ملف منها 👇"
+    )
+
+    keyboard = [
+        [InlineKeyboardButton(text=f"🤖 ملخص AI ({len(files_ai)})", callback_data=f"adm_curr_cat_files:{lec_id}:ai:0")],
+        [InlineKeyboardButton(text=f"✍️ شرح بخط اليد ({len(files_hw)})", callback_data=f"adm_curr_cat_files:{lec_id}:handwritten:0")],
+        [InlineKeyboardButton(text=f"📊 PowerPoint الدكتور ({len(files_ppt)})", callback_data=f"adm_curr_cat_files:{lec_id}:powerpoint:0")],
+        [InlineKeyboardButton(text="🔙 رجوع للمحاضرة", callback_data=f"adm_curr_lec:{lec_id}")]
+    ]
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("adm_curr_cat_files:"))
+async def cb_adm_curr_cat_files(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    parts = callback.data.split(":")
+    lec_id = int(parts[1])
+    category = parts[2]
+    page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+
+    lecture = await get_lecture_by_id(lec_id)
+    if not lecture:
+        await callback.answer("المحاضرة غير موجودة.", show_alert=True)
+        return
+
+    spec_id = lecture.get("specialization_id")
+    files = await get_files(lec_id, category, specialization_id=spec_id)
+    cat_title = CATEGORY_NAMES.get(category, category)
+
+    page_size = 6
+    total = len(files)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page = max(0, min(page, total_pages - 1))
+    start_idx = page * page_size
+    page_files = files[start_idx:start_idx + page_size]
+
+    text = (
+        f"📂 <b>إدارة ملفات {cat_title} ({lecture['name']}):</b>\n\n"
+        f"إجمالي الملفات: <b>{total}</b> (صفحة {page + 1} من {total_pages})\n\n"
+        "اضغط على اسم الملف لتحميله، أو (✏️) لتعديل اسمه، أو (🗑) لحذفه نهائياً:"
+    )
+
+    keyboard = []
+    if not files:
+        text += "\n<i>لا توجد ملفات مرفوعة في هذا التصنيف حالياً.</i>"
+    else:
+        for f in page_files:
+            fname = f['file_name'][:20]
+            keyboard.append([
+                InlineKeyboardButton(text=f"📄 {fname}", callback_data=f"file_get:{f['id']}"),
+                InlineKeyboardButton(text="✏️", callback_data=f"adm_file_edit_name:{f['id']}"),
+                InlineKeyboardButton(text="🗑", callback_data=f"adm_file_del_exec:{f['id']}")
+            ])
+
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton(text="⬅️ السابق", callback_data=f"adm_curr_cat_files:{lec_id}:{category}:{page - 1}"))
+    if total_pages > 1:
+        nav_row.append(InlineKeyboardButton(text=f"📄 {page + 1}/{total_pages}", callback_data="noop"))
+    if page < total_pages - 1:
+        nav_row.append(InlineKeyboardButton(text="التالي ➡️", callback_data=f"adm_curr_cat_files:{lec_id}:{category}:{page + 1}"))
+    if nav_row:
+        keyboard.append(nav_row)
+
+    keyboard.append([InlineKeyboardButton(text="➕ رفع ملف جديد لهذا التصنيف", callback_data=f"quick_upload_file:{lec_id}:{category}")])
+    keyboard.append([InlineKeyboardButton(text="🔙 رجوع للتصنيفات", callback_data=f"adm_curr_files_cats:{lec_id}")])
+
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
+    await callback.answer()

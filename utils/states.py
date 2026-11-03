@@ -85,3 +85,4 @@ class AdminStates(StatesGroup):
     waiting_for_edit_audio_title = State()
     waiting_for_edit_day_name = State()
     waiting_for_new_day_name = State()
+    waiting_for_edit_book_title = State()

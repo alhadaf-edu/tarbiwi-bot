@@ -861,6 +861,12 @@ async def get_book_by_id(book_id: int) -> Optional[Dict[str, Any]]:
         row = await cursor.fetchone()
         return dict(row) if row else None
 
+async def update_book(book_id: int, title: str) -> bool:
+    async with get_db() as db:
+        cursor = await db.execute("UPDATE books SET title = ? WHERE id = ?;", (title, book_id))
+        await db.commit()
+        return cursor.rowcount > 0
+
 async def delete_book(book_id: int) -> bool:
     async with get_db() as db:
         cursor = await db.execute("DELETE FROM books WHERE id = ?;", (book_id,))

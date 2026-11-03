@@ -4,7 +4,7 @@ from database import (
     get_study_days, get_day_by_id, get_subjects_by_day, get_subject_by_id,
     get_specializations, get_specialization_by_id, get_lectures, get_lecture_by_id,
     get_files, get_file_by_id, get_videos, get_video_by_id,
-    get_audios, get_audio_by_id, CATEGORY_NAMES
+    get_audios, get_audio_by_id, is_admin, CATEGORY_NAMES
 )
 from keyboards.study_kb import (
     get_curriculum_menu, get_days_keyboard, get_subjects_keyboard,
@@ -27,11 +27,12 @@ async def cb_curriculum_main(callback: CallbackQuery):
 @router.callback_query(F.data == "study_days_list")
 async def cb_study_days_list(callback: CallbackQuery):
     days = await get_study_days()
+    admin_status = await is_admin(callback.from_user.id)
     text = (
         "📅 <b>مواد الأيام الدراسية:</b>\n\n"
         "اختر اليوم الدراسي للاطلاع على مواده والمحاضرات المقررة:"
     )
-    await callback.message.edit_text(text, reply_markup=get_days_keyboard(days), parse_mode="HTML")
+    await callback.message.edit_text(text, reply_markup=get_days_keyboard(days, is_admin=admin_status), parse_mode="HTML")
     await callback.answer()
 
 @router.callback_query(F.data.startswith("day_view:"))
@@ -42,6 +43,7 @@ async def cb_day_view(callback: CallbackQuery):
         await callback.answer("اليوم غير موجود.", show_alert=True)
         return
 
+    admin_status = await is_admin(callback.from_user.id)
     subjects = await get_subjects_by_day(day_id)
     text = (
         f"📅 <b>جدول يوم: {day['name']}</b>\n"
@@ -51,7 +53,7 @@ async def cb_day_view(callback: CallbackQuery):
         doc = f" ({s['doctor_name']})" if s.get('doctor_name') else ""
         text += f"{idx}. <b>{s['name']}</b>{doc}\n"
 
-    await callback.message.edit_text(text, reply_markup=get_subjects_keyboard(day_id, day['name'], subjects), parse_mode="HTML")
+    await callback.message.edit_text(text, reply_markup=get_subjects_keyboard(day_id, day['name'], subjects, is_admin=admin_status), parse_mode="HTML")
     await callback.answer()
 
 @router.callback_query(F.data.startswith("subj_view:"))
@@ -62,6 +64,8 @@ async def cb_subj_view(callback: CallbackQuery):
         await callback.answer("المادة غير موجودة.", show_alert=True)
         return
 
+    admin_status = await is_admin(callback.from_user.id)
+
     # If the subject is طرق تدريس (2) or has specializations
     if subject.get("has_specializations"):
         specs = await get_specializations(subject_id)
@@ -70,7 +74,7 @@ async def cb_subj_view(callback: CallbackQuery):
             f"👨‍🏫 <b>عضو هيئة التدريس:</b> {subject.get('doctor_name') or 'غير محدد'}\n\n"
             f"🎯 <b>اختر التخصص المطلوب:</b>"
         )
-        await callback.message.edit_text(text, reply_markup=get_specializations_keyboard(subject_id, specs), parse_mode="HTML")
+        await callback.message.edit_text(text, reply_markup=get_specializations_keyboard(subject_id, specs, is_admin=admin_status), parse_mode="HTML")
         await callback.answer()
         return
 
@@ -85,7 +89,7 @@ async def cb_subj_view(callback: CallbackQuery):
         text += "<i>لم تُضف أي محاضرات لهذه المادة بعد. يمكنك إضافة أول محاضرة الآن!</i>"
 
     back_cb = f"day_view:{subject['day_id']}"
-    await callback.message.edit_text(text, reply_markup=get_lectures_keyboard(subject_id, lectures, back_callback=back_cb), parse_mode="HTML")
+    await callback.message.edit_text(text, reply_markup=get_lectures_keyboard(subject_id, lectures, back_callback=back_cb, is_admin=admin_status), parse_mode="HTML")
     await callback.answer()
 
 @router.callback_query(F.data.startswith("spec_view:"))
@@ -96,6 +100,7 @@ async def cb_spec_view(callback: CallbackQuery):
         await callback.answer("التخصص غير موجود.", show_alert=True)
         return
 
+    admin_status = await is_admin(callback.from_user.id)
     subject = await get_subject_by_id(spec["subject_id"])
     lectures = await get_lectures(spec["subject_id"], specialization_id=spec_id)
 
@@ -109,7 +114,7 @@ async def cb_spec_view(callback: CallbackQuery):
     back_cb = f"subj_view:{subject['id']}"
     await callback.message.edit_text(
         text,
-        reply_markup=get_lectures_keyboard(subject['id'], lectures, spec_id=spec_id, back_callback=back_cb),
+        reply_markup=get_lectures_keyboard(subject['id'], lectures, spec_id=spec_id, back_callback=back_cb, is_admin=admin_status),
         parse_mode="HTML"
     )
     await callback.answer()
@@ -199,7 +204,7 @@ async def cb_lec_cat_files(callback: CallbackQuery):
     else:
         text += "اضغط على أي ملف لاستعراض تفاصيله وتحميله مباشرة 👇\n"
 
-    kb = get_category_files_keyboard(files, lecture_id, category, page=page)
+    kb = get_category_files_keyboard(files, lecture_id, category, page=page, is_admin=await is_admin(callback.from_user.id))
     await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
     await callback.answer()
 
@@ -263,7 +268,7 @@ async def cb_lec_videos(callback: CallbackQuery):
     else:
         text += "اختر الفيديو لمشاهدته أو فتح الرابط مباشرة 👇\n"
 
-    kb = get_videos_keyboard(videos, lecture_id, page=page)
+    kb = get_videos_keyboard(videos, lecture_id, page=page, is_admin=await is_admin(callback.from_user.id))
     await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
     await callback.answer()
 
@@ -334,7 +339,7 @@ async def cb_lec_audios(callback: CallbackQuery):
     else:
         text += "اختر التسجيل الصوتي للاستماع إليه وتحميله مباشرة 👇\n"
 
-    kb = get_audios_keyboard(audios, lecture_id, page=page)
+    kb = get_audios_keyboard(audios, lecture_id, page=page, is_admin=await is_admin(callback.from_user.id))
     await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
     await callback.answer()
 
