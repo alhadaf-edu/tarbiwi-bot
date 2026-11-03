@@ -124,6 +124,26 @@ async def init_db():
         """)
 
         await db.execute("""
+            CREATE TABLE IF NOT EXISTS audios (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                lecture_id INTEGER NOT NULL,
+                specialization_id INTEGER NULL,
+                title TEXT NOT NULL,
+                description TEXT,
+                telegram_file_id TEXT NOT NULL,
+                duration INTEGER DEFAULT 0,
+                file_size INTEGER DEFAULT 0,
+                archive_message_id INTEGER NULL,
+                uploader_id INTEGER NOT NULL,
+                uploader_name TEXT,
+                is_hidden INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (lecture_id) REFERENCES lectures(id) ON DELETE CASCADE,
+                FOREIGN KEY (specialization_id) REFERENCES specializations(id) ON DELETE CASCADE
+            );
+        """)
+
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS books (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 subject_id INTEGER NULL,
@@ -703,6 +723,86 @@ async def toggle_video_hidden(video_id: int) -> bool:
         await db.commit()
         return cursor.rowcount > 0
 
+# --- Audios ---
+async def add_audio(
+    lecture_id: int,
+    title: str,
+    telegram_file_id: str,
+    uploader_id: int,
+    uploader_name: str,
+    specialization_id: Optional[int] = None,
+    description: Optional[str] = "",
+    duration: int = 0,
+    file_size: int = 0,
+    archive_message_id: Optional[int] = None
+) -> int:
+    async with get_db() as db:
+        cursor = await db.execute("""
+            INSERT INTO audios (
+                lecture_id, specialization_id, title, description, telegram_file_id,
+                duration, file_size, archive_message_id, uploader_id, uploader_name
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """, (
+            lecture_id, specialization_id, title, description, telegram_file_id,
+            duration, file_size, archive_message_id, uploader_id, uploader_name
+        ))
+        await db.commit()
+        return cursor.lastrowid
+
+async def get_audios(
+    lecture_id: int,
+    specialization_id: Optional[int] = None,
+    include_hidden: bool = False
+) -> List[Dict[str, Any]]:
+    async with get_db() as db:
+        hidden_clause = "" if include_hidden else "AND is_hidden = 0"
+        if specialization_id is not None:
+            cursor = await db.execute(f"""
+                SELECT * FROM audios
+                WHERE lecture_id = ? AND specialization_id = ? {hidden_clause}
+                ORDER BY created_at DESC;
+            """, (lecture_id, specialization_id))
+        else:
+            cursor = await db.execute(f"""
+                SELECT * FROM audios
+                WHERE lecture_id = ? {hidden_clause}
+                ORDER BY created_at DESC;
+            """, (lecture_id,))
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+async def get_audio_by_id(audio_id: int) -> Optional[Dict[str, Any]]:
+    async with get_db() as db:
+        cursor = await db.execute("""
+            SELECT a.*, l.name as lecture_name, s.name as subject_name, d.name as day_name, sp.name as spec_name
+            FROM audios a
+            JOIN lectures l ON a.lecture_id = l.id
+            JOIN subjects s ON l.subject_id = s.id
+            JOIN study_days d ON s.day_id = d.id
+            LEFT JOIN specializations sp ON a.specialization_id = sp.id
+            WHERE a.id = ?;
+        """, (audio_id,))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+async def update_audio(audio_id: int, title: str) -> bool:
+    async with get_db() as db:
+        cursor = await db.execute("UPDATE audios SET title = ? WHERE id = ?;", (title, audio_id))
+        await db.commit()
+        return cursor.rowcount > 0
+
+async def delete_audio(audio_id: int) -> bool:
+    async with get_db() as db:
+        cursor = await db.execute("DELETE FROM audios WHERE id = ?;", (audio_id,))
+        await db.commit()
+        return cursor.rowcount > 0
+
+async def toggle_audio_hidden(audio_id: int) -> bool:
+    async with get_db() as db:
+        cursor = await db.execute("UPDATE audios SET is_hidden = CASE WHEN is_hidden = 1 THEN 0 ELSE 1 END WHERE id = ?;", (audio_id,))
+        await db.commit()
+        return cursor.rowcount > 0
+
 # --- Books ---
 async def add_book(
     title: str,
@@ -875,6 +975,7 @@ async def search_content(query: str) -> Dict[str, List[Dict[str, Any]]]:
     results = {
         "files": [],
         "videos": [],
+        "audios": [],
         "books": []
     }
     async with get_db() as db:
@@ -920,6 +1021,27 @@ async def search_content(query: str) -> Dict[str, List[Dict[str, Any]]]:
             ORDER BY v.created_at DESC LIMIT 25;
         """, (query_term, query_term, query_term, query_term, query_term, query_term))
         results["videos"] = [dict(r) for r in await cursor.fetchall()]
+
+        # Search Audios
+        cursor = await db.execute("""
+            SELECT a.*, l.name as lecture_name, s.name as subject_name, d.name as day_name,
+                   s.doctor_name, sp.name as spec_name
+            FROM audios a
+            JOIN lectures l ON a.lecture_id = l.id
+            JOIN subjects s ON l.subject_id = s.id
+            JOIN study_days d ON s.day_id = d.id
+            LEFT JOIN specializations sp ON a.specialization_id = sp.id
+            WHERE a.is_hidden = 0 AND (
+                a.title LIKE ? OR
+                a.description LIKE ? OR
+                s.name LIKE ? OR
+                s.doctor_name LIKE ? OR
+                l.name LIKE ? OR
+                sp.name LIKE ?
+            )
+            ORDER BY a.created_at DESC LIMIT 25;
+        """, (query_term, query_term, query_term, query_term, query_term, query_term))
+        results["audios"] = [dict(r) for r in await cursor.fetchall()]
 
         # Search Books
         cursor = await db.execute("""
@@ -971,7 +1093,7 @@ async def get_activity_logs(limit: int = 50) -> List[Dict[str, Any]]:
 async def get_statistics() -> Dict[str, int]:
     async with get_db() as db:
         stats = {}
-        for table in ["users", "files", "videos", "books", "schedules", "lectures", "subjects"]:
+        for table in ["users", "files", "videos", "audios", "books", "schedules", "lectures", "subjects"]:
             cursor = await db.execute(f"SELECT COUNT(*) FROM {table};")
             stats[table] = (await cursor.fetchone())[0]
 

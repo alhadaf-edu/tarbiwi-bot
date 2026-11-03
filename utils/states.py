@@ -39,6 +39,16 @@ class UploadVideoStates(StatesGroup):
     waiting_for_description = State()
     confirm_upload = State()
 
+class UploadAudioStates(StatesGroup):
+    waiting_for_day = State()
+    waiting_for_subject = State()
+    waiting_for_spec = State()
+    waiting_for_lecture = State()
+    waiting_for_title = State()
+    waiting_for_audio_content = State() # audio file, voice note, or document
+    waiting_for_description = State()
+    confirm_upload = State()
+
 class UploadFileStates(StatesGroup):
     waiting_for_day = State()
     waiting_for_subject = State()
@@ -72,5 +82,6 @@ class AdminStates(StatesGroup):
     waiting_for_edit_lecture_name = State()
     waiting_for_admin_toggle_user_id = State()
     waiting_for_edit_video_title = State()
+    waiting_for_edit_audio_title = State()
     waiting_for_edit_day_name = State()
     waiting_for_new_day_name = State()

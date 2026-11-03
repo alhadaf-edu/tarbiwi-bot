@@ -34,9 +34,10 @@ async def process_search_query(message: Message, state: FSMContext):
     results = await search_content(query)
     files = results["files"]
     videos = results["videos"]
+    audios = results.get("audios", [])
     books = results["books"]
 
-    total = len(files) + len(videos) + len(books)
+    total = len(files) + len(videos) + len(audios) + len(books)
     if total == 0:
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔍 بحث جديد", callback_data="search_main")],
@@ -73,6 +74,16 @@ async def process_search_query(message: Message, state: FSMContext):
             path = f"{v['day_name']} ⬅️ {v['subject_name']}{spec} ⬅️ {v['lecture_name']}"
             text += f"{idx}. <b>{v['title']}</b>\n   📍 {path}\n"
             keyboard.append([InlineKeyboardButton(text=f"🎬 {v['title']}", callback_data=f"video_get:{v['id']}")])
+        text += "\n"
+
+    # Audios results
+    if audios:
+        text += f"🎙 <b>التسجيلات الصوتية ({len(audios)}):</b>\n"
+        for idx, a in enumerate(audios[:5], 1):
+            spec = f" ⬅️ {a['spec_name']}" if a.get('spec_name') else ""
+            path = f"{a['day_name']} ⬅️ {a['subject_name']}{spec} ⬅️ {a['lecture_name']}"
+            text += f"{idx}. <b>{a['title']}</b>\n   📍 {path}\n"
+            keyboard.append([InlineKeyboardButton(text=f"🎙 {a['title']}", callback_data=f"audio_get:{a['id']}")])
         text += "\n"
 
     # Books results

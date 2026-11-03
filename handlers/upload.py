@@ -4,12 +4,12 @@ from aiogram.fsm.context import FSMContext
 from database import (
     get_study_days, get_day_by_id, get_subjects_by_day, get_subject_by_id,
     get_specializations, get_specialization_by_id, get_lectures, get_lecture_by_id,
-    add_lecture, add_file, add_video, add_book, add_schedule, add_subject_suggestion,
+    add_lecture, add_file, add_video, add_audio, add_book, add_schedule, add_subject_suggestion,
     CATEGORY_NAMES, CATEGORY_ICONS
 )
 from utils.states import (
     UploadBookStates, UploadScheduleStates, SuggestSubjectStates,
-    AddLectureStates, UploadVideoStates, UploadFileStates
+    AddLectureStates, UploadVideoStates, UploadAudioStates, UploadFileStates
 )
 from utils.security import is_safe_file_name, is_file_size_acceptable, is_valid_url
 from keyboards.upload_kb import (
@@ -18,7 +18,7 @@ from keyboards.upload_kb import (
 )
 from keyboards.main_kb import get_cancel_keyboard
 from middlewares.auth import check_user_membership
-from services.archive import archive_document, archive_video
+from services.archive import archive_document, archive_video, archive_audio
 from services.notifier import notify_new_content
 
 router = Router(name="upload")
@@ -44,7 +44,8 @@ async def cb_upload_main(callback: CallbackQuery, state: FSMContext):
         "3️⃣ <b>اقتراح مادة جديدة:</b> إرسال اقتراح لمادة دراسية للمشرفين.\n"
         "4️⃣ <b>إضافة محاضرة جديدة:</b> فتح محاضرة جديدة لأي مادة وتخصص.\n"
         "5️⃣ <b>رفع فيديو لمحاضرة:</b> فيديو مباشر أو رابط يوتيوب/سحابي.\n"
-        "6️⃣ <b>رفع ملف لمحاضرة:</b> ملخصات AI، شرح يدوي، أو PowerPoint الدكتور.\n\n"
+        "6️⃣ <b>رفع تسجيل صوتي لمحاضرة:</b> تسجيل صوتي مباشر للمحاضرة.\n"
+        "7️⃣ <b>رفع ملف لمحاضرة:</b> ملخصات AI، شرح يدوي، أو PowerPoint الدكتور.\n\n"
         "اختر نوع المحتوى الذي ترغب في رفعه 👇"
     )
     await callback.message.edit_text(text, reply_markup=get_upload_menu_keyboard(), parse_mode="HTML")
@@ -618,7 +619,218 @@ async def confirm_video_publish(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 # ==========================================
-# 6. رفع ملف لمحاضرة موجودة (الأهم: تعدد الملفات ودعم الرفع المتتالي)
+# 6. رفع تسجيل صوتي لمحاضرة
+# ==========================================
+@router.callback_query(F.data == "upload_opt_audio")
+async def start_audio_upload(callback: CallbackQuery, state: FSMContext):
+    days = await get_study_days()
+    keyboard = []
+    for d in days:
+        keyboard.append([InlineKeyboardButton(text=f"📅 {d['name']}", callback_data=f"aud_day:{d['id']}")])
+    keyboard.append([InlineKeyboardButton(text="❌ إلغاء", callback_data="home")])
+
+    await state.set_state(UploadAudioStates.waiting_for_day)
+    await callback.message.edit_text("🎙 <b>رفع تسجيل صوتي لمحاضرة:</b>\n\nالخطوة 1: اختر اليوم الدراسي:", reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("quick_upload_audio:"))
+async def quick_upload_audio(callback: CallbackQuery, state: FSMContext):
+    lecture_id = int(callback.data.split(":")[1])
+    lecture = await get_lecture_by_id(lecture_id)
+    await state.update_data(
+        lecture_id=lecture_id,
+        lecture_name=lecture['name'],
+        subject_name=lecture['subject_name'],
+        day_name=lecture['day_name'],
+        spec_id=lecture.get('specialization_id'),
+        spec_name=lecture.get('spec_name')
+    )
+    await state.set_state(UploadAudioStates.waiting_for_title)
+    text = (
+        f"🎙 <b>إضافة تسجيل صوتي لـ ({lecture['name']}):</b>\n\n"
+        "أرسل <b>عنوان التسجيل الصوتي</b> (مثال: تسجيل المحاضرة كامل):"
+    )
+    await callback.message.edit_text(text, reply_markup=get_cancel_keyboard(), parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(UploadAudioStates.waiting_for_day, F.data.startswith("aud_day:"))
+async def aud_day_picked(callback: CallbackQuery, state: FSMContext):
+    day_id = int(callback.data.split(":")[1])
+    day = await get_day_by_id(day_id)
+    await state.update_data(day_id=day_id, day_name=day['name'])
+    subjects = await get_subjects_by_day(day_id)
+    keyboard = []
+    for s in subjects:
+        keyboard.append([InlineKeyboardButton(text=f"📖 {s['name']}", callback_data=f"aud_subj:{s['id']}")])
+    keyboard.append([InlineKeyboardButton(text="❌ إلغاء", callback_data="home")])
+    await state.set_state(UploadAudioStates.waiting_for_subject)
+    await callback.message.edit_text("الخطوة 2: اختر المادة:", reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(UploadAudioStates.waiting_for_subject, F.data.startswith("aud_subj:"))
+async def aud_subj_picked(callback: CallbackQuery, state: FSMContext):
+    subject_id = int(callback.data.split(":")[1])
+    subject = await get_subject_by_id(subject_id)
+    await state.update_data(subject_id=subject_id, subject_name=subject['name'])
+
+    if subject.get("has_specializations"):
+        specs = await get_specializations(subject_id)
+        keyboard = []
+        for sp in specs:
+            keyboard.append([InlineKeyboardButton(text=f"🎯 {sp['name']}", callback_data=f"aud_spec:{sp['id']}")])
+        keyboard.append([InlineKeyboardButton(text="❌ إلغاء", callback_data="home")])
+        await state.set_state(UploadAudioStates.waiting_for_spec)
+        await callback.message.edit_text("الخطوة 3: اختر التخصص:", reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
+        await callback.answer()
+        return
+
+    await state.update_data(spec_id=None, spec_name=None)
+    lectures = await get_lectures(subject_id)
+    if not lectures:
+        await callback.answer("لا توجد محاضرات في هذه المادة. أضف محاضرة أولاً.", show_alert=True)
+        return
+    keyboard = []
+    for l in lectures:
+        keyboard.append([InlineKeyboardButton(text=f"🎓 {l['name']}", callback_data=f"aud_lec:{l['id']}")])
+    keyboard.append([InlineKeyboardButton(text="❌ إلغاء", callback_data="home")])
+    await state.set_state(UploadAudioStates.waiting_for_lecture)
+    await callback.message.edit_text("الخطوة 3: اختر المحاضرة:", reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(UploadAudioStates.waiting_for_spec, F.data.startswith("aud_spec:"))
+async def aud_spec_picked(callback: CallbackQuery, state: FSMContext):
+    spec_id = int(callback.data.split(":")[1])
+    spec = await get_specialization_by_id(spec_id)
+    data = await state.get_data()
+    await state.update_data(spec_id=spec_id, spec_name=spec['name'])
+    lectures = await get_lectures(data["subject_id"], specialization_id=spec_id)
+    if not lectures:
+        await callback.answer("لا توجد محاضرات في هذا التخصص. أضف محاضرة أولاً.", show_alert=True)
+        return
+    keyboard = []
+    for l in lectures:
+        keyboard.append([InlineKeyboardButton(text=f"🎓 {l['name']}", callback_data=f"aud_lec:{l['id']}")])
+    keyboard.append([InlineKeyboardButton(text="❌ إلغاء", callback_data="home")])
+    await state.set_state(UploadAudioStates.waiting_for_lecture)
+    await callback.message.edit_text("الخطوة 4: اختر المحاضرة:", reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(UploadAudioStates.waiting_for_lecture, F.data.startswith("aud_lec:"))
+async def aud_lec_picked(callback: CallbackQuery, state: FSMContext):
+    lec_id = int(callback.data.split(":")[1])
+    lec = await get_lecture_by_id(lec_id)
+    await state.update_data(lecture_id=lec_id, lecture_name=lec['name'])
+    await state.set_state(UploadAudioStates.waiting_for_title)
+    await callback.message.edit_text("أرسل الآن <b>عنوان التسجيل الصوتي</b> (مثال: تسجيل المحاضرة كامل):", reply_markup=get_cancel_keyboard(), parse_mode="HTML")
+    await callback.answer()
+
+@router.message(UploadAudioStates.waiting_for_title)
+async def aud_title_received(message: Message, state: FSMContext):
+    await state.update_data(audio_title=message.text.strip())
+    await state.set_state(UploadAudioStates.waiting_for_audio_content)
+    text = (
+        f"🎙 <b>عنوان التسجيل:</b> {message.text.strip()}\n\n"
+        "أرسل الآن <b>الملف الصوتي</b> (تسجيل صوتي، مقطع Voice، أو ملف صوتي بأي صيغة):"
+    )
+    await message.answer(text, reply_markup=get_cancel_keyboard(), parse_mode="HTML")
+
+@router.message(UploadAudioStates.waiting_for_audio_content, F.audio | F.voice | F.document)
+async def aud_file_received(message: Message, state: FSMContext):
+    if message.audio:
+        file_id = message.audio.file_id
+        audio_type = "audio"
+    elif message.voice:
+        file_id = message.voice.file_id
+        audio_type = "voice"
+    else:
+        doc = message.document
+        file_id = doc.file_id
+        audio_type = "document"
+
+    await state.update_data(audio_type=audio_type, file_id=file_id)
+    await state.set_state(UploadAudioStates.waiting_for_description)
+    await message.answer("أرسل وصفاً للتسجيل الصوتي أو اضغط «تخطي»:", reply_markup=get_skip_or_cancel_keyboard(), parse_mode="HTML")
+
+@router.callback_query(UploadAudioStates.waiting_for_description, F.data == "skip_step")
+async def aud_skip_desc(callback: CallbackQuery, state: FSMContext):
+    await state.update_data(description="")
+    await show_audio_summary(callback.message, state)
+    await callback.answer()
+
+@router.message(UploadAudioStates.waiting_for_description)
+async def aud_desc_received(message: Message, state: FSMContext):
+    await state.update_data(description=message.text.strip())
+    await show_audio_summary(message, state)
+
+async def show_audio_summary(msg_or_cb, state: FSMContext):
+    data = await state.get_data()
+    await state.set_state(UploadAudioStates.confirm_upload)
+    spec_part = f" ⬅️ {data['spec_name']}" if data.get('spec_name') else ""
+    path = f"{data.get('day_name','')} ⬅️ {data.get('subject_name','')} {spec_part} ⬅️ {data.get('lecture_name','')}"
+
+    type_labels = {"audio": "ملف صوتي", "voice": "رسالة صوتية", "document": "ملف مرفق"}
+    type_label = type_labels.get(data.get('audio_type', 'audio'), "ملف صوتي")
+
+    text = (
+        "📋 <b>مراجعة بيانات التسجيل الصوتي قبل النشر:</b>\n\n"
+        f"🎙 <b>عنوان التسجيل:</b> {data['audio_title']}\n"
+        f"📍 <b>المسار:</b> {path}\n"
+        f"نوع المحتوى: {type_label}\n"
+        f"📝 <b>الوصف:</b> {data.get('description') or 'لا يوجد'}\n\n"
+        "اضغط على «تأكيد ونشر الآن»:"
+    )
+    await msg_or_cb.answer(text, reply_markup=get_confirm_keyboard("confirm_audio_publish"), parse_mode="HTML")
+
+@router.callback_query(UploadAudioStates.confirm_upload, F.data == "confirm_audio_publish")
+async def confirm_audio_publish(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    user = callback.from_user
+
+    arch_msg_id = None
+    final_file_id = data.get("file_id")
+
+    if final_file_id:
+        arch_msg_id, arch_file_id = await archive_audio(
+            callback.bot,
+            final_file_id,
+            f"🎙 تسجيل صوتي: {data['audio_title']}\nبواسطة: {user.full_name}"
+        )
+        if arch_file_id:
+            final_file_id = arch_file_id
+
+    await add_audio(
+        lecture_id=data["lecture_id"],
+        title=data["audio_title"],
+        audio_type=data.get("audio_type", "audio"),
+        uploader_id=user.id,
+        uploader_name=user.full_name,
+        specialization_id=data.get("spec_id"),
+        description=data.get("description", ""),
+        telegram_file_id=final_file_id,
+        archive_message_id=arch_msg_id
+    )
+
+    await notify_new_content(
+        bot=callback.bot,
+        content_type="تسجيل صوتي 🎙",
+        title=data["audio_title"],
+        uploader_name=user.full_name,
+        day_name=data.get("day_name"),
+        subject_name=data.get("subject_name"),
+        lecture_name=data.get("lecture_name"),
+        spec_name=data.get("spec_name")
+    )
+
+    await state.clear()
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎙 عرض تسجيلات المحاضرة", callback_data=f"lec_audios:{data['lecture_id']}:0")],
+        [InlineKeyboardButton(text="🏠 القائمة الرئيسية", callback_data="home")]
+    ])
+    await callback.message.edit_text("🎉 <b>تم نشر التسجيل الصوتي بنجاح!</b>", reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+# ==========================================
+# 7. رفع ملف لمحاضرة موجودة (الأهم: تعدد الملفات ودعم الرفع المتتالي)
 # ==========================================
 @router.callback_query(F.data == "upload_opt_file")
 async def start_file_upload(callback: CallbackQuery, state: FSMContext):

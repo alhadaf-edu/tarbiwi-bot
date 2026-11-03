@@ -65,3 +65,31 @@ async def archive_video(
     except Exception as e:
         logger.error(f"Failed to archive video to {channel}: {e}")
         return None, file_id
+
+async def archive_audio(
+    bot: Bot,
+    file_id: str,
+    caption: str
+) -> Tuple[Optional[int], Optional[str]]:
+    """
+    Archives an audio file into the archive channel.
+    """
+    channel = await get_effective_archive_channel()
+    if not channel:
+        return None, file_id
+
+    try:
+        msg = await bot.send_audio(
+            chat_id=channel,
+            audio=file_id,
+            caption=caption
+        )
+        # msg.audio may be None if Telegram converts it to a document
+        if msg.audio:
+            return msg.message_id, msg.audio.file_id
+        elif msg.document:
+            return msg.message_id, msg.document.file_id
+        return msg.message_id, file_id
+    except Exception as e:
+        logger.error(f"Failed to archive audio to {channel}: {e}")
+        return None, file_id

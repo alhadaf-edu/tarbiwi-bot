@@ -3,12 +3,14 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardBut
 from database import (
     get_study_days, get_day_by_id, get_subjects_by_day, get_subject_by_id,
     get_specializations, get_specialization_by_id, get_lectures, get_lecture_by_id,
-    get_files, get_file_by_id, get_videos, get_video_by_id, CATEGORY_NAMES
+    get_files, get_file_by_id, get_videos, get_video_by_id,
+    get_audios, get_audio_by_id, CATEGORY_NAMES
 )
 from keyboards.study_kb import (
     get_curriculum_menu, get_days_keyboard, get_subjects_keyboard,
     get_specializations_keyboard, get_lectures_keyboard, get_lecture_detail_keyboard,
-    get_categories_keyboard, get_category_files_keyboard, get_videos_keyboard
+    get_categories_keyboard, get_category_files_keyboard, get_videos_keyboard,
+    get_audios_keyboard
 )
 
 router = Router(name="curriculum")
@@ -305,3 +307,85 @@ async def cb_video_get(callback: CallbackQuery):
         ])
         await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
         await callback.answer()
+
+@router.callback_query(F.data.startswith("lec_audios:"))
+async def cb_lec_audios(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    lecture_id = int(parts[1])
+    page = int(parts[2]) if len(parts) > 2 else 0
+
+    lecture = await get_lecture_by_id(lecture_id)
+    if not lecture:
+        await callback.answer("المحاضرة غير موجودة.", show_alert=True)
+        return
+
+    spec_id = lecture.get("specialization_id")
+    audios = await get_audios(lecture_id, specialization_id=spec_id)
+
+    spec_part = f" ⬅️ {lecture['spec_name']}" if lecture.get("spec_name") else ""
+    breadcrumb = f"{lecture['day_name']} ⬅️ {lecture['subject_name']}{spec_part} ⬅️ {lecture['name']} ⬅️ <b>تسجيلات المحاضرة الصوتية</b>"
+
+    text = (
+        f"📍 <b>المسار:</b> {breadcrumb}\n"
+        f"🎙 <b>إجمالي التسجيلات الصوتية:</b> {len(audios)}\n\n"
+    )
+    if not audios:
+        text += "<i>لا توجد تسجيلات صوتية مضافة لهذه المحاضرة حتى الآن. يمكنك إضافة تسجيل صوتي الآن!</i>\n"
+    else:
+        text += "اختر التسجيل الصوتي للاستماع إليه وتحميله مباشرة 👇\n"
+
+    kb = get_audios_keyboard(audios, lecture_id, page=page)
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("audio_get:"))
+async def cb_audio_get(callback: CallbackQuery):
+    audio_id = int(callback.data.split(":")[1])
+    a = await get_audio_by_id(audio_id)
+    if not a:
+        await callback.answer("التسجيل الصوتي غير متوفر.", show_alert=True)
+        return
+
+    spec_part = f" ⬅️ {a['spec_name']}" if a.get("spec_name") else ""
+    breadcrumb = f"{a['day_name']} ⬅️ {a['subject_name']}{spec_part} ⬅️ {a['lecture_name']}"
+
+    text = (
+        f"🎙 <b>{a['title']}</b>\n\n"
+        f"📍 <b>المسار:</b> {breadcrumb}\n"
+        f"👤 <b>بواسطة:</b> {a.get('uploader_name') or 'عضو في الدبلومة'}\n"
+        f"📅 <b>تاريخ الإضافة:</b> {str(a.get('created_at'))[:16]}\n"
+    )
+    if a.get("description"):
+        text += f"📝 <b>الوصف:</b> {a['description']}\n"
+
+    try:
+        await callback.message.bot.send_audio(
+            chat_id=callback.from_user.id,
+            audio=a["telegram_file_id"],
+            caption=text,
+            title=a["title"],
+            performer=a.get("subject_name", "دبلومة التأهيل التربوي"),
+            parse_mode="HTML"
+        )
+        await callback.answer("✅ تم إرسال التسجيل الصوتي بنجاح.")
+    except Exception as e:
+        # Fallback to voice or document
+        try:
+            await callback.message.bot.send_voice(
+                chat_id=callback.from_user.id,
+                voice=a["telegram_file_id"],
+                caption=text,
+                parse_mode="HTML"
+            )
+            await callback.answer("✅ تم إرسال التسجيل الصوتي بنجاح.")
+        except Exception:
+            try:
+                await callback.message.bot.send_document(
+                    chat_id=callback.from_user.id,
+                    document=a["telegram_file_id"],
+                    caption=text,
+                    parse_mode="HTML"
+                )
+                await callback.answer("✅ تم إرسال الملف الصوتي بنجاح.")
+            except Exception as e2:
+                await callback.answer(f"تعذر إرسال الصوت: {e2}", show_alert=True)

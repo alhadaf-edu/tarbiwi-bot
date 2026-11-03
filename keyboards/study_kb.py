@@ -75,9 +75,12 @@ def get_lectures_keyboard(
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 def get_lecture_detail_keyboard(lecture_id: int, back_callback: str) -> InlineKeyboardMarkup:
-    """Shows video and files menu for a specific lecture"""
+    """Shows video, audio, and files menu for a specific lecture"""
     buttons = [
-        [InlineKeyboardButton(text="🎥 فيديو المحاضرة", callback_data=f"lec_videos:{lecture_id}:0")],
+        [
+            InlineKeyboardButton(text="🎥 فيديو المحاضرة", callback_data=f"lec_videos:{lecture_id}:0"),
+            InlineKeyboardButton(text="🎙 التسجيلات الصوتية", callback_data=f"lec_audios:{lecture_id}:0")
+        ],
         [InlineKeyboardButton(text="📂 ملفات المحاضرة", callback_data=f"lec_files_cats:{lecture_id}")],
         [
             InlineKeyboardButton(text="🔙 رجوع للمحاضرات", callback_data=back_callback),
@@ -155,6 +158,29 @@ def get_videos_keyboard(
         ]
     ]
     return build_pagination_keyboard(videos, page, page_size, builder, prefix, extra)
+
+def get_audios_keyboard(
+    audios: List[Dict[str, Any]],
+    lecture_id: int,
+    page: int = 0,
+    page_size: int = 6
+) -> InlineKeyboardMarkup:
+    """Builds paginated keyboard of audios for a lecture"""
+    def builder(a):
+        title = a['title']
+        if len(title) > 35:
+            title = title[:32] + "..."
+        return InlineKeyboardButton(text=f"🎙 {title}", callback_data=f"audio_get:{a['id']}")
+
+    prefix = f"lec_audios:{lecture_id}"
+    extra = [
+        [InlineKeyboardButton(text="➕ رفع تسجيل صوتي جديد", callback_data=f"quick_upload_audio:{lecture_id}")],
+        [
+            InlineKeyboardButton(text="🔙 رجوع للمحاضرة", callback_data=f"lec_view:{lecture_id}"),
+            InlineKeyboardButton(text="🏠 القائمة الرئيسية", callback_data="home")
+        ]
+    ]
+    return build_pagination_keyboard(audios, page, page_size, builder, prefix, extra)
 
 def get_books_keyboard(
     books: List[Dict[str, Any]],

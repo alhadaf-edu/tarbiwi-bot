@@ -12,7 +12,8 @@ from database import (
     get_lectures, get_lecture_by_id, update_lecture, delete_lecture,
     get_files, get_file_by_id, update_file, delete_file, toggle_file_hidden,
     get_videos, get_video_by_id, update_video, delete_video, toggle_video_hidden,
-    get_books, delete_book, get_schedules, delete_schedule, CATEGORY_NAMES
+    get_books, delete_book, get_schedules, delete_schedule, CATEGORY_NAMES,
+    get_audios, get_audio_by_id, update_audio, delete_audio, toggle_audio_hidden
 )
 from keyboards.admin_kb import (
     get_admin_dashboard_keyboard, get_admin_links_keyboard, get_admin_link_actions_keyboard,
@@ -46,7 +47,7 @@ async def cb_admin_main(callback: CallbackQuery, state: FSMContext):
         f"👥 المستخدمون: <b>{stats.get('users', 0)}</b> | 🚫 المحظورون: <b>{stats.get('banned_users', 0)}</b>\n"
         f"📖 المواد: <b>{stats.get('subjects', 0)}</b> | 🎓 المحاضرات: <b>{stats.get('lectures', 0)}</b>\n"
         f"📁 الملفات: <b>{stats.get('files', 0)}</b> (🤖 AI: {stats.get('ai_files', 0)} | ✍️ يدوي: {stats.get('handwritten_files', 0)} | 📊 PPT: {stats.get('ppt_files', 0)})\n"
-        f"🎥 الفيديوهات: <b>{stats.get('videos', 0)}</b> | 📚 الكتب: <b>{stats.get('books', 0)}</b>\n\n"
+        f"🎥 الفيديوهات: <b>{stats.get('videos', 0)}</b> | 🎙 التسجيلات الصوتية: <b>{stats.get('audios', 0)}</b> | 📚 الكتب: <b>{stats.get('books', 0)}</b>\n\n"
         "اختر القسم الذي تريد إدارته:"
     )
     await callback.message.edit_text(text, reply_markup=get_admin_dashboard_keyboard(), parse_mode="HTML")
@@ -76,7 +77,7 @@ async def cb_admin_stats(callback: CallbackQuery):
         f"👥 <b>إجمالي المستخدمين:</b> {stats.get('users', 0)} | 🚫 <b>المحظورون:</b> {stats.get('banned_users', 0)}\n"
         f"📖 <b>المواد:</b> {stats.get('subjects', 0)} | 🎓 <b>المحاضرات:</b> {stats.get('lectures', 0)}\n"
         f"📁 <b>الملفات:</b> {stats.get('files', 0)} (🤖 {stats.get('ai_files', 0)} | ✍️ {stats.get('handwritten_files', 0)} | 📊 {stats.get('ppt_files', 0)})\n"
-        f"🎥 <b>الفيديوهات:</b> {stats.get('videos', 0)} | 📚 <b>الكتب:</b> {stats.get('books', 0)} | 🗓 <b>الجداول:</b> {stats.get('schedules', 0)}\n\n"
+        f"🎥 <b>الفيديوهات:</b> {stats.get('videos', 0)} | 🎙 <b>التسجيلات الصوتية:</b> {stats.get('audios', 0)} | 📚 <b>الكتب:</b> {stats.get('books', 0)} | 🗓 <b>الجداول:</b> {stats.get('schedules', 0)}\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"👥 <b>المستخدمون المسجلون بالبوت ({total_users}):</b>\n"
     )
@@ -1315,3 +1316,96 @@ async def cb_adm_vid_del(callback: CallbackQuery):
     await delete_video(vid_id)
     await callback.answer("🗑 تم حذف الفيديو بنجاح.", show_alert=True)
     await cb_admin_videos_hub(callback)
+
+# ==========================================
+# إدارة التسجيلات الصوتية (Audios Management Hub)
+# ==========================================
+@router.callback_query(F.data == "admin_audios_hub")
+async def cb_admin_audios_hub(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    from database import get_db
+    async with get_db() as db:
+        cursor = await db.execute("""
+            SELECT a.*, l.name as lecture_name, s.name as subject_name
+            FROM audios a
+            JOIN lectures l ON a.lecture_id = l.id
+            JOIN subjects s ON l.subject_id = s.id
+            ORDER BY a.created_at DESC LIMIT 20;
+        """)
+        rows = await cursor.fetchall()
+        recent_audios = [dict(r) for r in rows]
+
+    text = (
+        "🎙 <b>إدارة التسجيلات الصوتية للمحاضرات:</b>\n\n"
+        f"أحدث التسجيلات المسجلة في النظام ({len(recent_audios)}):\n"
+    )
+    keyboard = []
+    if not recent_audios:
+        text += "<i>لا توجد تسجيلات صوتية مرفوعة حتى الآن.</i>\n"
+    else:
+        for aud in recent_audios:
+            vis = "👁" if not aud.get("is_hidden") else "🙈"
+            title = f"{vis} {aud['title']}"
+            keyboard.append([
+                InlineKeyboardButton(text=f"🎙 {title[:20]}", callback_data=f"audio_get:{aud['id']}"),
+                InlineKeyboardButton(text="✏️", callback_data=f"adm_aud_edit_title:{aud['id']}"),
+                InlineKeyboardButton(text="إخفاء/إظهار", callback_data=f"adm_aud_toggle:{aud['id']}"),
+                InlineKeyboardButton(text="🗑", callback_data=f"adm_aud_del:{aud['id']}")
+            ])
+
+    keyboard.append([InlineKeyboardButton(text="➕ رفع تسجيل صوتي جديد", callback_data="upload_opt_audio")])
+    keyboard.append([InlineKeyboardButton(text="🔙 رجوع للوحة التحكم", callback_data="admin_main")])
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("adm_aud_edit_title:"))
+async def cb_adm_aud_edit_title(callback: CallbackQuery, state: FSMContext):
+    if not await ensure_admin(callback):
+        return
+    aud_id = int(callback.data.split(":")[1])
+    a = await get_audio_by_id(aud_id)
+    if not a:
+        await callback.answer("التسجيل غير موجود.", show_alert=True)
+        return
+    await state.update_data(edit_aud_id=aud_id)
+    await state.set_state(AdminStates.waiting_for_edit_audio_title)
+    text = (
+        f"✏️ <b>تعديل عنوان التسجيل الصوتي:</b>\n\n"
+        f"العنوان الحالي: <b>{a['title']}</b>\n\n"
+        "أرسل <b>العنوان الجديد</b> للتسجيل:"
+    )
+    await callback.message.edit_text(text, reply_markup=get_cancel_keyboard(), parse_mode="HTML")
+    await callback.answer()
+
+@router.message(AdminStates.waiting_for_edit_audio_title)
+async def adm_aud_new_title_received(message: Message, state: FSMContext):
+    new_title = message.text.strip()
+    data = await state.get_data()
+    aud_id = data.get("edit_aud_id")
+    if not aud_id:
+        await state.clear()
+        await message.answer("⚠️ حدث خطأ أو انتهت صلاحية الجلسة.")
+        return
+    await update_audio(aud_id, title=new_title)
+    await state.clear()
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع لإدارة التسجيلات", callback_data="admin_audios_hub")]])
+    await message.answer(f"✅ تم تعديل عنوان التسجيل الصوتي إلى: <b>{new_title}</b> بنجاح!", reply_markup=kb, parse_mode="HTML")
+
+@router.callback_query(F.data.startswith("adm_aud_toggle:"))
+async def cb_adm_aud_toggle(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    aud_id = int(callback.data.split(":")[1])
+    await toggle_audio_hidden(aud_id)
+    await callback.answer("✅ تم تغيير حالة إظهار/إخفاء التسجيل الصوتي.")
+    await cb_admin_audios_hub(callback)
+
+@router.callback_query(F.data.startswith("adm_aud_del:"))
+async def cb_adm_aud_del(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    aud_id = int(callback.data.split(":")[1])
+    await delete_audio(aud_id)
+    await callback.answer("🗑 تم حذف التسجيل الصوتي بنجاح.", show_alert=True)
+    await cb_admin_audios_hub(callback)

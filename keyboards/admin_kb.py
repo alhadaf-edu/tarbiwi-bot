@@ -17,6 +17,9 @@ def get_admin_dashboard_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(text="🎥 إدارة الفيديوهات", callback_data="admin_videos_hub"),
+            InlineKeyboardButton(text="🎙 إدارة التسجيلات الصوتية", callback_data="admin_audios_hub")
+        ],
+        [
             InlineKeyboardButton(text="🔗 إدارة روابط المجموعات", callback_data="admin_group_links")
         ],
         [
