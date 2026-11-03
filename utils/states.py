@@ -70,3 +70,5 @@ class AdminStates(StatesGroup):
     waiting_for_main_group = State()
     waiting_for_edit_file_name = State()
     waiting_for_edit_lecture_name = State()
+    waiting_for_admin_toggle_user_id = State()
+    waiting_for_edit_video_title = State()

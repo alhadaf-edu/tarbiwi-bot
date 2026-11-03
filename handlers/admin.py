@@ -2,7 +2,7 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 from aiogram.fsm.context import FSMContext
 from database import (
-    is_admin, get_statistics, get_activity_logs, get_all_users, set_user_ban,
+    is_admin, get_statistics, get_activity_logs, get_all_users, set_user_ban, set_user_admin,
     get_group_links, add_group_link, update_group_link, delete_group_link,
     toggle_group_link_visibility, get_pending_suggestions, review_suggestion,
     get_setting, set_setting, get_study_days, get_day_by_id, get_subjects_by_day, get_subject_by_id,
@@ -10,8 +10,8 @@ from database import (
     update_specialization, delete_specialization, add_specialization,
     get_lectures, get_lecture_by_id, update_lecture, delete_lecture,
     get_files, get_file_by_id, update_file, delete_file, toggle_file_hidden,
-    get_videos, delete_video, toggle_video_hidden,
-    get_books, delete_book, get_schedules, delete_schedule
+    get_videos, get_video_by_id, update_video, delete_video, toggle_video_hidden,
+    get_books, delete_book, get_schedules, delete_schedule, CATEGORY_NAMES
 )
 from keyboards.admin_kb import (
     get_admin_dashboard_keyboard, get_admin_links_keyboard, get_admin_link_actions_keyboard,
@@ -307,13 +307,66 @@ async def cb_adm_day_subj(callback: CallbackQuery):
     if not await ensure_admin(callback):
         return
     day_id = int(callback.data.split(":")[1])
+    day = await get_day_by_id(day_id)
     subjects = await get_subjects_by_day(day_id)
     keyboard = []
     for s in subjects:
-        keyboard.append([InlineKeyboardButton(text=f"✏️ {s['name']} ({s.get('doctor_name','')})", callback_data=f"adm_edit_subj_menu:{s['id']}")])
+        keyboard.append([
+            InlineKeyboardButton(text=f"📖 {s['name']}", callback_data=f"adm_edit_subj_menu:{s['id']}"),
+            InlineKeyboardButton(text="✏️ تعديل", callback_data=f"adm_edit_subj_menu:{s['id']}"),
+            InlineKeyboardButton(text="🗑 حذف", callback_data=f"adm_del_subj_confirm:{s['id']}")
+        ])
+    keyboard.append([InlineKeyboardButton(text="➕ إضافة مادة جديدة لهذا اليوم", callback_data=f"adm_add_subj:{day_id}")])
     keyboard.append([InlineKeyboardButton(text="🔙 رجوع للأيام", callback_data="admin_subjects")])
-    await callback.message.edit_text("اختر المادة لتعديل اسمها أو اسم الدكتور المسند إليها:", reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
+    text = f"📅 <b>مواد يوم {day['name'] if day else ''}:</b>\n\nاضغط على (✏️ تعديل) لتعديل اسم المادة والدكتور، أو (🗑 حذف) لحذف المادة:"
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
     await callback.answer()
+
+@router.callback_query(F.data.startswith("adm_del_subj_confirm:"))
+async def cb_adm_del_subj_confirm(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    subj_id = int(callback.data.split(":")[1])
+    s = await get_subject_by_id(subj_id)
+    if not s:
+        await callback.answer("المادة غير موجودة.", show_alert=True)
+        return
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="⚠️ نعم، احذف المادة نهائياً", callback_data=f"adm_del_subj_exec:{subj_id}"),
+            InlineKeyboardButton(text="❌ تراجع", callback_data=f"adm_day_subj:{s['day_id']}")
+        ]
+    ])
+    text = (
+        f"⚠️ <b>تأكيد حذف المادة:</b>\n\n"
+        f"هل أنت متأكد من حذف مادة: <b>{s['name']}</b>؟\n\n"
+        "<i>ملاحظة: سيتم حذف المحاضرات والملفات المرتبطة بهذه المادة أيضاً.</i>"
+    )
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("adm_del_subj_exec:"))
+async def cb_adm_del_subj_exec(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    subj_id = int(callback.data.split(":")[1])
+    s = await get_subject_by_id(subj_id)
+    day_id = s["day_id"] if s else 1
+    await delete_subject(subj_id)
+    await callback.answer("🗑 تم حذف المادة بنجاح.", show_alert=True)
+    day = await get_day_by_id(day_id)
+    subjects = await get_subjects_by_day(day_id)
+    keyboard = []
+    for sub in subjects:
+        keyboard.append([
+            InlineKeyboardButton(text=f"📖 {sub['name']}", callback_data=f"adm_edit_subj_menu:{sub['id']}"),
+            InlineKeyboardButton(text="✏️ تعديل", callback_data=f"adm_edit_subj_menu:{sub['id']}"),
+            InlineKeyboardButton(text="🗑 حذف", callback_data=f"adm_del_subj_confirm:{sub['id']}")
+        ])
+    keyboard.append([InlineKeyboardButton(text="➕ إضافة مادة جديدة لهذا اليوم", callback_data=f"adm_add_subj:{day_id}")])
+    keyboard.append([InlineKeyboardButton(text="🔙 رجوع للأيام", callback_data="admin_subjects")])
+    text = f"📅 <b>مواد يوم {day['name'] if day else ''}:</b>\n\nاضغط على (✏️ تعديل) لتعديل اسم المادة والدكتور، أو (🗑 حذف) لحذف المادة:"
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
 
 @router.callback_query(F.data.startswith("adm_edit_subj_menu:"))
 async def cb_adm_edit_subj_menu(callback: CallbackQuery, state: FSMContext):
@@ -364,13 +417,49 @@ async def cb_admin_specs(callback: CallbackQuery):
     specs = await get_specializations(toroq_id)
     keyboard = []
     for sp in specs:
-        keyboard.append([InlineKeyboardButton(text=f"🎯 {sp['name']}", callback_data=f"adm_spec_action:{sp['id']}")])
+        keyboard.append([
+            InlineKeyboardButton(text=f"🎯 {sp['name']}", callback_data=f"adm_spec_action:{sp['id']}"),
+            InlineKeyboardButton(text="✏️ تعديل", callback_data=f"adm_spec_action:{sp['id']}"),
+            InlineKeyboardButton(text="🗑 حذف", callback_data=f"adm_del_spec_confirm:{sp['id']}")
+        ])
     keyboard.append([InlineKeyboardButton(text="➕ إضافة تخصص جديد", callback_data=f"adm_add_spec:{toroq_id}")])
     keyboard.append([InlineKeyboardButton(text="🔙 رجوع للوحة التحكم", callback_data="admin_main")])
 
-    text = "🎯 <b>إدارة التخصصات الفرعية لمادة طرق تدريس (2):</b>\nاختر التخصص لتعديله أو حذفه:"
+    text = "🎯 <b>إدارة التخصصات الفرعية لمادة طرق تدريس (2):</b>\nاضغط على (✏️ تعديل) لتعديل اسم التخصص، أو (🗑 حذف) لحذفه:"
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
     await callback.answer()
+
+@router.callback_query(F.data.startswith("adm_del_spec_confirm:"))
+async def cb_adm_del_spec_confirm(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    spec_id = int(callback.data.split(":")[1])
+    spec = await get_specialization_by_id(spec_id)
+    if not spec:
+        await callback.answer("التخصص غير موجود.", show_alert=True)
+        return
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="⚠️ نعم، احذف التخصص", callback_data=f"adm_del_spec_exec:{spec_id}"),
+            InlineKeyboardButton(text="❌ تراجع", callback_data="admin_specs")
+        ]
+    ])
+    text = (
+        f"⚠️ <b>تأكيد حذف التخصص:</b>\n\n"
+        f"هل أنت متأكد من حذف تخصص: <b>{spec['name']}</b>؟\n\n"
+        "<i>ملاحظة: سيتم حذف المحاضرات والملفات الخاصة بهذا التخصص أيضاً.</i>"
+    )
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("adm_del_spec_exec:"))
+async def cb_adm_del_spec_exec(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    spec_id = int(callback.data.split(":")[1])
+    await delete_specialization(spec_id)
+    await callback.answer("🗑 تم حذف التخصص بنجاح.", show_alert=True)
+    await cb_admin_specs(callback)
 
 @router.callback_query(F.data.startswith("adm_spec_action:"))
 async def cb_adm_spec_action(callback: CallbackQuery, state: FSMContext):
@@ -476,6 +565,15 @@ async def cb_admin_users(callback: CallbackQuery):
     text += "لإلغاء حظر أو حظر مستخدم، اضغط على أحد الأزرار أدناه:"
 
     keyboard = []
+    # User selection buttons for admin promotion/demotion
+    for u in page_users:
+        admin_icon = "👑 عزل من الإشراف" if u.get("is_admin") else "⭐ ترقية لمشرف"
+        uname_display = f"@{u['username']}" if u.get("username") else u.get("full_name", str(u["user_id"]))[:14]
+        keyboard.append([
+            InlineKeyboardButton(text=f"👤 {uname_display}", callback_data=f"adm_user_detail:{u['user_id']}"),
+            InlineKeyboardButton(text=admin_icon, callback_data=f"adm_toggle_admin:{u['user_id']}:{page}")
+        ])
+
     nav_row = []
     if page > 0:
         nav_row.append(InlineKeyboardButton(text="⬅️ السابق", callback_data=f"admin_users:{page - 1}"))
@@ -488,7 +586,10 @@ async def cb_admin_users(callback: CallbackQuery):
         keyboard.append(nav_row)
 
     keyboard.append([
-        InlineKeyboardButton(text="🚫 حظر مستخدم بالمعرف (ID)", callback_data="adm_ban_user"),
+        InlineKeyboardButton(text="⭐ ترقية مشرف بمعرف الحساب (ID)", callback_data="adm_promote_user_input"),
+        InlineKeyboardButton(text="🚫 حظر مستخدم بالمعرف (ID)", callback_data="adm_ban_user")
+    ])
+    keyboard.append([
         InlineKeyboardButton(text="✅ فك حظر مستخدم بالمعرف (ID)", callback_data="adm_unban_user")
     ])
     keyboard.append([InlineKeyboardButton(text="🔙 رجوع للوحة التحكم", callback_data="admin_main")])
@@ -498,6 +599,61 @@ async def cb_admin_users(callback: CallbackQuery):
     except Exception:
         await callback.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
     await callback.answer()
+
+@router.callback_query(F.data.startswith("adm_toggle_admin:"))
+async def cb_adm_toggle_admin(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    parts = callback.data.split(":")
+    target_uid = int(parts[1])
+    page = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+
+    from config import ADMIN_IDS
+    if target_uid in ADMIN_IDS and target_uid == callback.from_user.id:
+        await callback.answer("⚠️ لا يمكنك إزالة صلاحية الإشراف عن نفسك لأنك المالك الأساسي.", show_alert=True)
+        return
+
+    users = await get_all_users()
+    target_u = next((u for u in users if u["user_id"] == target_uid), None)
+    if not target_u:
+        await callback.answer("المستخدم غير موجود.", show_alert=True)
+        return
+
+    current_status = bool(target_u.get("is_admin"))
+    new_status = not current_status
+    await set_user_admin(target_uid, new_status)
+    action_text = "تمت ترقيته لمشرف بنجاح! ⭐" if new_status else "تم عزله من الإشراف بنجاح."
+    await callback.answer(f"✅ {action_text}", show_alert=True)
+
+    # Re-render the users page
+    fake_cb_data = f"admin_users:{page}"
+    callback.data = fake_cb_data
+    await cb_admin_users(callback)
+
+@router.callback_query(F.data == "adm_promote_user_input")
+async def cb_adm_promote_user_input(callback: CallbackQuery, state: FSMContext):
+    if not await ensure_admin(callback):
+        return
+    await state.set_state(AdminStates.waiting_for_admin_toggle_user_id)
+    await callback.message.edit_text(
+        "⭐ <b>ترقية مستخدم إلى رتبة مشرف (Admin):</b>\n\n"
+        "أرسل معرّف المستخدم (Telegram User ID) لترقيته إلى مشرف وتفعيل لوحة التحكم له فوراً:",
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+@router.message(AdminStates.waiting_for_admin_toggle_user_id)
+async def adm_promote_user_id_received(message: Message, state: FSMContext):
+    uid_str = message.text.strip()
+    if not uid_str.isdigit():
+        await message.answer("⚠️ يرجى إدخال معرّف صحيح (أرقام فقط).", reply_markup=get_cancel_keyboard())
+        return
+    uid = int(uid_str)
+    await set_user_admin(uid, True)
+    await state.clear()
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 إدارة المستخدمين", callback_data="admin_users")]])
+    await message.answer(f"⭐ تم ترقية المستخدم ذو المعرف (<code>{uid}</code>) إلى مشرف بنجاح! ستظهر له لوحة التحكم الآن.", reply_markup=kb, parse_mode="HTML")
 
 @router.callback_query(F.data == "adm_ban_user")
 async def cb_adm_ban_user(callback: CallbackQuery, state: FSMContext):
@@ -617,17 +773,70 @@ async def adm_main_group_received(message: Message, state: FSMContext):
 async def cb_admin_files_hub(callback: CallbackQuery):
     if not await ensure_admin(callback):
         return
+    from database import get_db
+    async with get_db() as db:
+        cursor = await db.execute("""
+            SELECT f.*, l.name as lecture_name, s.name as subject_name
+            FROM files f
+            JOIN lectures l ON f.lecture_id = l.id
+            JOIN subjects s ON l.subject_id = s.id
+            ORDER BY f.created_at DESC LIMIT 30;
+        """)
+        recent_files = [dict(r) for r in await cursor.fetchall()]
+
     text = (
-        "📁 <b>إدارة ملفات المحاضرات:</b>\n\n"
-        "يمكنك البحث عن أي ملف من خلال زر «🔍 البحث عن ملف» في القائمة الرئيسية واستخدام زر التعديل أو الحذف، "
-        "أو استعراض الملفات مباشرة عبر المنهج الدراسي حيث يمكنك إدارة كل ملف على حدة."
+        "📁 <b>إدارة ملفات المحاضرات والتصنيفات:</b>\n\n"
+        f"أحدث الملفات المسجلة في النظام ({len(recent_files)}):\n"
+        "يمكنك الضغط على اسم الملف لتحميله، أو (✏️) لتعديل اسمه، أو (🗑) لحذفه نهائياً:"
     )
+    keyboard = []
+    if not recent_files:
+        text += "\n<i>لا توجد ملفات مرفوعة حالياً.</i>"
+    else:
+        for f in recent_files:
+            cat_icon = "🤖" if f["category"] == "ai" else ("✍️" if f["category"] == "handwritten" else "📊")
+            fname = f['file_name'][:24]
+            keyboard.append([
+                InlineKeyboardButton(text=f"{cat_icon} {fname}", callback_data=f"file_get:{f['id']}"),
+                InlineKeyboardButton(text="✏️", callback_data=f"adm_file_edit_name:{f['id']}"),
+                InlineKeyboardButton(text="🗑", callback_data=f"adm_file_del_confirm:{f['id']}")
+            ])
+
+    keyboard.append([InlineKeyboardButton(text="➕ رفع ملف جديد", callback_data="upload_opt_file")])
+    keyboard.append([InlineKeyboardButton(text="🔙 رجوع للوحة التحكم", callback_data="admin_main")])
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("adm_file_del_confirm:"))
+async def cb_adm_file_del_confirm(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    file_id = int(callback.data.split(":")[1])
+    file_data = await get_file_by_id(file_id)
+    if not file_data:
+        await callback.answer("الملف غير متوفر.", show_alert=True)
+        return
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📚 تصفح المنهج وإدارة الملفات", callback_data="curriculum_main")],
-        [InlineKeyboardButton(text="🔙 رجوع للوحة التحكم", callback_data="admin_main")]
+        [
+            InlineKeyboardButton(text="⚠️ نعم، احذف الملف", callback_data=f"adm_file_del_exec:{file_id}"),
+            InlineKeyboardButton(text="❌ تراجع", callback_data="admin_files_hub")
+        ]
     ])
+    text = (
+        f"⚠️ <b>تأكيد حذف الملف:</b>\n\n"
+        f"هل أنت متأكد من حذف ملف: <b>{file_data['file_name']}</b>؟"
+    )
     await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
     await callback.answer()
+
+@router.callback_query(F.data.startswith("adm_file_del_exec:"))
+async def cb_adm_file_del_exec(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    file_id = int(callback.data.split(":")[1])
+    await delete_file(file_id)
+    await callback.answer("🗑 تم حذف الملف بنجاح دون التأثير على بقية الملفات.", show_alert=True)
+    await cb_admin_files_hub(callback)
 
 # --- Admin File Actions (Edit, Hide, Delete singly) ---
 @router.callback_query(F.data.startswith("adm_file_toggle_hide:"))
@@ -940,15 +1149,49 @@ async def cb_admin_videos_hub(callback: CallbackQuery):
             vis = "👁" if not vid.get("is_hidden") else "🙈"
             title = f"{vis} {vid['title']}"
             keyboard.append([
-                InlineKeyboardButton(text=f"🎬 {title[:25]}", callback_data=f"video_get:{vid['id']}"),
+                InlineKeyboardButton(text=f"🎬 {title[:20]}", callback_data=f"video_get:{vid['id']}"),
+                InlineKeyboardButton(text="✏️", callback_data=f"adm_vid_edit_title:{vid['id']}"),
                 InlineKeyboardButton(text="إخفاء/إظهار", callback_data=f"adm_vid_toggle:{vid['id']}"),
-                InlineKeyboardButton(text="🗑 حذف", callback_data=f"adm_vid_del:{vid['id']}")
+                InlineKeyboardButton(text="🗑", callback_data=f"adm_vid_del:{vid['id']}")
             ])
 
     keyboard.append([InlineKeyboardButton(text="➕ رفع أو إضافة فيديو جديد", callback_data="upload_opt_video")])
     keyboard.append([InlineKeyboardButton(text="🔙 رجوع للوحة التحكم", callback_data="admin_main")])
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="HTML")
     await callback.answer()
+
+@router.callback_query(F.data.startswith("adm_vid_edit_title:"))
+async def cb_adm_vid_edit_title(callback: CallbackQuery, state: FSMContext):
+    if not await ensure_admin(callback):
+        return
+    vid_id = int(callback.data.split(":")[1])
+    v = await get_video_by_id(vid_id)
+    if not v:
+        await callback.answer("الفيديو غير موجود.", show_alert=True)
+        return
+    await state.update_data(edit_vid_id=vid_id)
+    await state.set_state(AdminStates.waiting_for_edit_video_title)
+    text = (
+        f"✏️ <b>تعديل عنوان الفيديو:</b>\n\n"
+        f"العنوان الحالي: <b>{v['title']}</b>\n\n"
+        "أرسل <b>العنوان الجديد</b> للفيديو:"
+    )
+    await callback.message.edit_text(text, reply_markup=get_cancel_keyboard(), parse_mode="HTML")
+    await callback.answer()
+
+@router.message(AdminStates.waiting_for_edit_video_title)
+async def adm_vid_new_title_received(message: Message, state: FSMContext):
+    new_title = message.text.strip()
+    data = await state.get_data()
+    vid_id = data.get("edit_vid_id")
+    if not vid_id:
+        await state.clear()
+        await message.answer("⚠️ حدث خطأ أو انتهت صلاحية الجلسة.")
+        return
+    await update_video(vid_id, title=new_title)
+    await state.clear()
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 رجوع لإدارة الفيديوهات", callback_data="admin_videos_hub")]])
+    await message.answer(f"✅ تم تعديل عنوان الفيديو إلى: <b>{new_title}</b> بنجاح!", reply_markup=kb, parse_mode="HTML")
 
 @router.callback_query(F.data.startswith("adm_vid_toggle:"))
 async def cb_adm_vid_toggle(callback: CallbackQuery):
