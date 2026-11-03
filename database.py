@@ -711,6 +711,12 @@ async def get_video_by_id(video_id: int) -> Optional[Dict[str, Any]]:
         row = await cursor.fetchone()
         return dict(row) if row else None
 
+async def update_video(video_id: int, title: str) -> bool:
+    async with get_db() as db:
+        cursor = await db.execute("UPDATE videos SET title = ? WHERE id = ?;", (title, video_id))
+        await db.commit()
+        return cursor.rowcount > 0
+
 async def delete_video(video_id: int) -> bool:
     async with get_db() as db:
         cursor = await db.execute("DELETE FROM videos WHERE id = ?;", (video_id,))
