@@ -967,6 +967,52 @@ async def adm_main_group_received(message: Message, state: FSMContext):
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 العودة للإعدادات", callback_data="admin_settings")]])
     await message.answer(f"✅ تم حفظ معرّف مجموعة الدبلومة الرئيسية: <code>{val}</code>", reply_markup=kb, parse_mode="HTML")
 
+# --- Cloud Sync & GitHub Persistence Handlers ---
+@router.callback_query(F.data == "adm_sync_github")
+async def cb_adm_sync_github(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    await callback.answer("⏳ جاري المزامنة مع GitHub...")
+    from services.cloud_sync import sync_db_to_github
+    success, msg = await sync_db_to_github(f"Manual sync by admin {callback.from_user.id}")
+    await callback.message.answer(f"{'✅' if success else '⚠️'} <b>نتيجة المزامنة مع GitHub:</b>\n\n{msg}", parse_mode="HTML")
+
+@router.callback_query(F.data == "adm_set_github_token")
+async def cb_adm_set_github_token(callback: CallbackQuery, state: FSMContext):
+    if not await ensure_admin(callback):
+        return
+    await state.set_state(AdminStates.waiting_for_github_token)
+    text = (
+        "🔑 <b>ضبط توكن GitHub للمزامنة التلقائية:</b>\n\n"
+        "أرسل الآن الـ Personal Access Token (PAT) الخاص بحسابك على GitHub (يبدأ بـ <code>ghp_</code> أو <code>github_pat_</code>):\n\n"
+        "<i>ملاحظة: هذا التوكن يسمح للبوت بحفظ قاعدة البيانات tarbiwi.db تلقائياً داخل المستودع بعد كل رفع حتى لا تفقد أي محتوى إطلاقاً.</i>"
+    )
+    await callback.message.edit_text(text, reply_markup=get_cancel_keyboard(), parse_mode="HTML")
+    await callback.answer()
+
+@router.message(AdminStates.waiting_for_github_token)
+async def adm_github_token_received(message: Message, state: FSMContext):
+    token = message.text.strip()
+    await set_setting("github_token", token)
+    await state.clear()
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 تجربة المزامنة الآن", callback_data="adm_sync_github")],
+        [InlineKeyboardButton(text="🔙 العودة للإعدادات", callback_data="admin_settings")]
+    ])
+    await message.answer("✅ <b>تم حفظ توكن GitHub بنجاح!</b>\nسيقوم البوت الآن بمزامنة أي محتوى جديد تلقائياً مع المستودع.", reply_markup=kb, parse_mode="HTML")
+
+@router.callback_query(F.data == "adm_sync_telegram_backup")
+async def cb_adm_sync_telegram_backup(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    await callback.answer("⏳ جاري حفظ نسخة احتياطية في الأرشيف...")
+    from services.cloud_sync import backup_db_to_telegram
+    ok = await backup_db_to_telegram(callback.bot)
+    if ok:
+        await callback.message.answer("✅ <b>تم حفظ وتثبيت نسخة احتياطية كاملة في قناة الأرشيف بنجاح!</b>\nسيقوم البوت باستعادتها تلقائياً عند أي إعادة تشغيل على Render.", parse_mode="HTML")
+    else:
+        await callback.message.answer("⚠️ تعذر إرسال النسخة الاحتياطية للأرشيف، تأكد من ضبط معرّف قناة الأرشيف وصلاحيات البوت فيها.", parse_mode="HTML")
+
 # --- Files Management Hub ---
 @router.callback_query(F.data == "admin_files_hub")
 async def cb_admin_files_hub(callback: CallbackQuery):

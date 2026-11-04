@@ -156,6 +156,9 @@ async def confirm_book_publish(callback: CallbackQuery, state: FSMContext):
         uploader_name=user.full_name
     )
 
+    from services.cloud_sync import trigger_content_sync
+    await trigger_content_sync(callback.bot, f"upload_book: {data['book_title']}")
+
     await state.clear()
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📖 تصفح الكتب", callback_data="books_list:0")],
@@ -610,6 +613,9 @@ async def confirm_video_publish(callback: CallbackQuery, state: FSMContext):
         spec_name=data.get("spec_name")
     )
 
+    from services.cloud_sync import trigger_content_sync
+    await trigger_content_sync(callback.bot, f"upload_video: {data['video_title']}")
+
     await state.clear()
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎥 عرض فيديوهات المحاضرة", callback_data=f"lec_videos:{data['lecture_id']}:0")],
@@ -793,7 +799,8 @@ async def confirm_audio_publish(callback: CallbackQuery, state: FSMContext):
         arch_msg_id, arch_file_id = await archive_audio(
             callback.bot,
             final_file_id,
-            f"🎙 تسجيل صوتي: {data['audio_title']}\nبواسطة: {user.full_name}"
+            f"🎙 تسجيل صوتي: {data['audio_title']}\nبواسطة: {user.full_name}",
+            audio_type=data.get("audio_type", "audio")
         )
         if arch_file_id:
             final_file_id = arch_file_id
@@ -801,25 +808,32 @@ async def confirm_audio_publish(callback: CallbackQuery, state: FSMContext):
     await add_audio(
         lecture_id=data["lecture_id"],
         title=data["audio_title"],
-        audio_type=data.get("audio_type", "audio"),
+        telegram_file_id=final_file_id,
         uploader_id=user.id,
         uploader_name=user.full_name,
         specialization_id=data.get("spec_id"),
         description=data.get("description", ""),
-        telegram_file_id=final_file_id,
-        archive_message_id=arch_msg_id
+        archive_message_id=arch_msg_id,
+        audio_type=data.get("audio_type", "audio")
     )
 
-    await notify_new_content(
-        bot=callback.bot,
-        content_type="تسجيل صوتي 🎙",
-        title=data["audio_title"],
-        uploader_name=user.full_name,
-        day_name=data.get("day_name"),
-        subject_name=data.get("subject_name"),
-        lecture_name=data.get("lecture_name"),
-        spec_name=data.get("spec_name")
-    )
+    try:
+        await notify_new_content(
+            bot=callback.bot,
+            content_type="تسجيل صوتي 🎙",
+            title=data["audio_title"],
+            uploader_name=user.full_name,
+            day_name=data.get("day_name"),
+            subject_name=data.get("subject_name"),
+            lecture_name=data.get("lecture_name"),
+            spec_name=data.get("spec_name")
+        )
+    except Exception as e:
+        logger.warning(f"Notification error for audio: {e}")
+
+    # Trigger automatic cloud backup & GitHub sync
+    from services.cloud_sync import trigger_content_sync
+    await trigger_content_sync(callback.bot, f"upload_audio: {data['audio_title']}")
 
     await state.clear()
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -1071,6 +1085,9 @@ async def confirm_file_publish(callback: CallbackQuery, state: FSMContext):
         category_name=cat_name
     )
 
+    from services.cloud_sync import trigger_content_sync
+    await trigger_content_sync(callback.bot, f"upload_file: {data['custom_file_name']}")
+
     # Exact format required by requirement 7.7
     success_text = (
         "✅ <b>تم نشر الملف بنجاح!</b>\n\n"
@@ -1210,6 +1227,9 @@ async def confirm_next_file_publish(callback: CallbackQuery, state: FSMContext):
         spec_name=data.get("spec_name"),
         category_name=cat_name
     )
+
+    from services.cloud_sync import trigger_content_sync
+    await trigger_content_sync(callback.bot, f"upload_next_file: {data['custom_file_name']}")
 
     success_text = (
         "✅ <b>تم نشر الملف الإضافي بنجاح!</b>\n\n"

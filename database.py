@@ -740,7 +740,9 @@ async def add_audio(
     description: Optional[str] = "",
     duration: int = 0,
     file_size: int = 0,
-    archive_message_id: Optional[int] = None
+    archive_message_id: Optional[int] = None,
+    audio_type: Optional[str] = "audio",
+    **kwargs
 ) -> int:
     async with get_db() as db:
         cursor = await db.execute("""

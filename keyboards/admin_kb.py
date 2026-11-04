@@ -75,6 +75,9 @@ def get_admin_settings_keyboard(notif_enabled: bool, check_membership: bool) -> 
         [InlineKeyboardButton(text=check_text, callback_data="adm_toggle_setting:membership_check_enabled")],
         [InlineKeyboardButton(text="📁 ضبط معرّف قناة الأرشيف", callback_data="adm_set_archive_channel")],
         [InlineKeyboardButton(text="👥 ضبط معرّف المجموعة الرئيسية", callback_data="adm_set_main_group")],
+        [InlineKeyboardButton(text="🔄 مزامنة قاعدة البيانات إلى GitHub", callback_data="adm_sync_github")],
+        [InlineKeyboardButton(text="🔑 ضبط توكن GitHub للمزامنة التلقائية", callback_data="adm_set_github_token")],
+        [InlineKeyboardButton(text="📦 حفظ نسخة احتياطية فورية في الأرشيف", callback_data="adm_sync_telegram_backup")],
         [InlineKeyboardButton(text="🔙 رجوع للوحة التحكم", callback_data="admin_main")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)

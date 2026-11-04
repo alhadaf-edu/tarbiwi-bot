@@ -89,3 +89,4 @@ class AdminStates(StatesGroup):
     waiting_for_new_subject_name = State()
     waiting_for_new_subject_doctor = State()
     waiting_for_new_spec_subject_id = State()
+    waiting_for_github_token = State()

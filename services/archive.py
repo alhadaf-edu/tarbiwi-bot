@@ -69,27 +69,47 @@ async def archive_video(
 async def archive_audio(
     bot: Bot,
     file_id: str,
-    caption: str
+    caption: str,
+    audio_type: str = "audio"
 ) -> Tuple[Optional[int], Optional[str]]:
     """
-    Archives an audio file into the archive channel.
+    Archives an audio or voice file into the archive channel.
     """
     channel = await get_effective_archive_channel()
     if not channel:
         return None, file_id
 
     try:
-        msg = await bot.send_audio(
-            chat_id=channel,
-            audio=file_id,
-            caption=caption
-        )
-        # msg.audio may be None if Telegram converts it to a document
-        if msg.audio:
-            return msg.message_id, msg.audio.file_id
-        elif msg.document:
-            return msg.message_id, msg.document.file_id
-        return msg.message_id, file_id
+        if audio_type == "voice":
+            msg = await bot.send_voice(
+                chat_id=channel,
+                voice=file_id,
+                caption=caption
+            )
+            return msg.message_id, msg.voice.file_id if msg.voice else file_id
+        elif audio_type == "document":
+            msg = await bot.send_document(
+                chat_id=channel,
+                document=file_id,
+                caption=caption
+            )
+            return msg.message_id, msg.document.file_id if msg.document else file_id
+        else:
+            msg = await bot.send_audio(
+                chat_id=channel,
+                audio=file_id,
+                caption=caption
+            )
+            if msg.audio:
+                return msg.message_id, msg.audio.file_id
+            elif msg.document:
+                return msg.message_id, msg.document.file_id
+            return msg.message_id, file_id
     except Exception as e:
-        logger.error(f"Failed to archive audio to {channel}: {e}")
-        return None, file_id
+        logger.warning(f"Failed to archive audio as {audio_type} to {channel}: {e}, trying fallback send_document...")
+        try:
+            msg = await bot.send_document(chat_id=channel, document=file_id, caption=caption)
+            return msg.message_id, msg.document.file_id if msg.document else file_id
+        except Exception as e2:
+            logger.error(f"Fallback archiving also failed: {e2}")
+            return None, file_id

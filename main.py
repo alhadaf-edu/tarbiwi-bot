@@ -51,24 +51,32 @@ async def start_health_server():
 async def main():
     logger.info("Initializing Tarbiwi Bot...")
 
-    # Initialize Database and seed data safely
-    await init_db()
-    logger.info("Database initialized successfully.")
-
     if not config.BOT_TOKEN:
         logger.error("BOT_TOKEN is not set in .env! Please set your Telegram bot token.")
         print("\n[!] خطأ: لم يتم ضبط BOT_TOKEN داخل ملف .env. يرجى إدخال التوكن لبدء تشغيل البوت.\n")
         return
+
+    bot = Bot(
+        token=config.BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+    )
+
+    # Automatically check and restore database from Telegram Archive channel backup if newer
+    from services.cloud_sync import restore_db_from_telegram_if_needed
+    try:
+        await restore_db_from_telegram_if_needed(bot)
+    except Exception as e:
+        logger.warning(f"Startup cloud restore check note: {e}")
+
+    # Initialize Database and seed data safely
+    await init_db()
+    logger.info("Database initialized successfully.")
 
     # Start health check server if PORT is provided (e.g. Render, Railway, cloud hosts)
     web_runner = None
     if os.getenv("PORT"):
         web_runner = await start_health_server()
 
-    bot = Bot(
-        token=config.BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-    )
     dp = Dispatcher(storage=MemoryStorage())
 
     # Register Middlewares
